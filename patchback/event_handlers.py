@@ -9,10 +9,43 @@ from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 
 logger = logging.getLogger(__name__)
 
+BACKPORT_LABEL_PREFIX = 'backport-'
+BACKPORT_LABEL_LEN = len(BACKPORT_LABEL_PREFIX)
+
+
+@process_event_actions('pull_request', {'closed'})
+@process_webhook_payload
+async def on_merge_of_labeled_pr(
+        *,
+        number,  # PR number
+        pull_request,  # PR details subobject
+        **_kwargs,  # unimportant event details
+) -> None:
+    """React to labeled pull request merge."""
+    if not pull_request['merged']:
+        logger.info('PR#%s is not merged, ignoring...', number)
+        return
+
+    labels = pull_request['labels']
+    target_branches = [
+        label[BACKPORT_LABEL_LEN:] for label in labels
+        if label.startswith(BACKPORT_LABEL_PREFIX)
+    ]
+
+    if not target_branches:
+        logger.info('PR#%s does not have backport labels, ignoring...', number)
+        return
+
+    merge_commit_sha = pull_request['merge_commit_sha']
+    gh_api = RUNTIME_CONTEXT.app_installation_client
+
+    logger.info('PR#%s is labeled with "%s"', number, labels)
+    logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
+    logger.info('gh_api=%s', gh_api)
+
 
 @process_event_actions('pull_request', {'labeled'})
 @process_webhook_payload
-# pylint: disable=too-many-locals
 async def on_label_added_to_merged_pr(
         *,
         label,  # label added
@@ -25,15 +58,9 @@ async def on_label_added_to_merged_pr(
         logger.info('PR#%s is not merged, ignoring...', number)
         return
 
-    backport_label_prefix = 'backport-'
-    backport_label_len = len(backport_label_prefix)
-    # target_branches = [
-    #     label[backport_label_len:] for label in labels
-    #     if label.startswith(backport_label_prefix)
-    # ]
     target_branches = (
-        (label['name'][backport_label_len:], )
-        if label['name'].startswith(backport_label_prefix)
+        (label['name'][BACKPORT_LABEL_LEN:], )
+        if label['name'].startswith(BACKPORT_LABEL_PREFIX)
         else ()
     )
 
