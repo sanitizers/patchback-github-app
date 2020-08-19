@@ -66,19 +66,22 @@ async def on_label_added_to_merged_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to GitHub App pull request / issue label webhook event."""
-    target_branches = (
-        (label['name'][BACKPORT_LABEL_LEN:], )
-        if label['name'].startswith(BACKPORT_LABEL_PREFIX)
-        else ()
-    )
-
-    if not target_branches:
-        logger.info('PR#%s does not have backport labels, ignoring...', number)
+    label_name = label['name']
+    if not label_name.startswith(BACKPORT_LABEL_PREFIX):
+        logger.info(
+            'PR#%s got labeled with %s but it is not '
+            'a backport label, ignoring...',
+            number, label_name,
+        )
         return
 
+    target_branch = label_name[BACKPORT_LABEL_LEN:]
     merge_commit_sha = pull_request['merge_commit_sha']
     gh_api = RUNTIME_CONTEXT.app_installation_client
 
-    logger.info('PR#%s got labeled with "%s"', number, label)
+    logger.info(
+        'PR#%s got labeled with "%s". It needs to be backported to %s',
+        number, label_name, target_branch,
+    )
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
     logger.info('gh_api=%s', gh_api)
