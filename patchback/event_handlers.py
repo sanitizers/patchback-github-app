@@ -13,8 +13,23 @@ BACKPORT_LABEL_PREFIX = 'backport-'
 BACKPORT_LABEL_LEN = len(BACKPORT_LABEL_PREFIX)
 
 
+def ensure_pr_merged(event_handler):
+    async def event_handler_wrapper(*, number, pull_request, **kwargs):
+        if not pull_request['merged']:
+            logger.info('PR#%s is not merged, ignoring...', number)
+            return
+
+        return await event_handler(
+            number=number,
+            pull_request=pull_request,
+            **kwargs,
+        )
+    return event_handler_wrapper
+
+
 @process_event_actions('pull_request', {'closed'})
 @process_webhook_payload
+@ensure_pr_merged
 async def on_merge_of_labeled_pr(
         *,
         number,  # PR number
@@ -22,10 +37,6 @@ async def on_merge_of_labeled_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to labeled pull request merge."""
-    if not pull_request['merged']:
-        logger.info('PR#%s is not merged, ignoring...', number)
-        return
-
     labels = pull_request['labels']
     target_branches = [
         label[BACKPORT_LABEL_LEN:] for label in labels
@@ -46,6 +57,7 @@ async def on_merge_of_labeled_pr(
 
 @process_event_actions('pull_request', {'labeled'})
 @process_webhook_payload
+@ensure_pr_merged
 async def on_label_added_to_merged_pr(
         *,
         label,  # label added
@@ -54,10 +66,6 @@ async def on_label_added_to_merged_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to GitHub App pull request / issue label webhook event."""
-    if not pull_request['merged']:
-        logger.info('PR#%s is not merged, ignoring...', number)
-        return
-
     target_branches = (
         (label['name'][BACKPORT_LABEL_LEN:], )
         if label['name'].startswith(BACKPORT_LABEL_PREFIX)
