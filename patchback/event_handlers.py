@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 @process_event_actions('pull_request', {'labeled'})
 @process_webhook_payload
 # pylint: disable=too-many-locals
-async def on_pr_label_added(
+async def on_label_added_to_merged_pr(
         *,
         label,  # label added
         number,  # PR number
