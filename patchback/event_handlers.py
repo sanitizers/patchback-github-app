@@ -47,6 +47,6 @@ async def on_label_change(
 
     gh_api = RUNTIME_CONTEXT.app_installation_client
 
-    logger.info('PR#%s labels got updated to: %r', number, labels)
-    logger.info('PR#%s merge commit: %s', merge_commit_sha)
+    logger.info('PR#%s got labeled with "%s"', number, label)
+    logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
     logger.info('gh_api=%s', gh_api)
