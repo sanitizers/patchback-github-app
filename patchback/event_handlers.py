@@ -16,12 +16,12 @@ logger = logging.getLogger(__name__)
 async def on_label_change(
         *,
         label,  # label added
+        number,  # PR number
         # https://docs.github.com/en/rest/reference/pulls#get-a-pull-request:
         # phantom merge commit sha if it's open or closed and not merged;
         # real merge commit sha, if it's merged.
-        merge_commit_sha,
-        merged,  # flag whether it's merged or not
-        number,  # PR number
+        merge_commit_sha=None,
+        merged=None,  # flag whether it's merged or not
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to GitHub App pull request / issue label webhook event."""
