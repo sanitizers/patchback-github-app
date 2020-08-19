@@ -17,15 +17,11 @@ async def on_label_change(
         *,
         label,  # label added
         number,  # PR number
-        # https://docs.github.com/en/rest/reference/pulls#get-a-pull-request:
-        # phantom merge commit sha if it's open or closed and not merged;
-        # real merge commit sha, if it's merged.
-        merge_commit_sha=None,
-        merged=None,  # flag whether it's merged or not
+        pull_request,  # PR details subobject
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to GitHub App pull request / issue label webhook event."""
-    if not merged:
+    if not pull_request['merged']:
         logger.info('PR#%s is not merged, ignoring...', number)
         return
 
@@ -45,6 +41,7 @@ async def on_label_change(
         logger.info('PR#%s does not have backport labels, ignoring...', number)
         return
 
+    merge_commit_sha = pull_request['merge_commit_sha']
     gh_api = RUNTIME_CONTEXT.app_installation_client
 
     logger.info('PR#%s got labeled with "%s"', number, label)
