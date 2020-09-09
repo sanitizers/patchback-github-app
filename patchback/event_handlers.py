@@ -183,14 +183,33 @@ async def on_merge_of_labeled_pr(
                 'Failed to backport PR #%d (commit `%s`) to `%s`',
                 number, merge_commit_sha, target_branch,
             )
+            continue
         except PermissionError:
             logger.info(
                 'Failed to backport PR #%d (commit `%s`) to `%s` because '
                 'of insufficient GitHub App Installation privileges',
                 number, merge_commit_sha, target_branch,
             )
+            continue
         else:
             logger.info('Backport PR branch: `%s`', backport_pr_branch)
+
+        logger.info('Creating a backport PR...')
+        pr_resp = await gh_api.post(
+            repository['pulls_url'],
+            data={
+                'title': f'[PR #{number}/{merge_commit_sha} backport]'
+                f'[{target_branch}] {pull_request["title"]}',
+                'head': backport_pr_branch,
+                'base': target_branch,
+                'body': f'**This is a backport of PR #{number} as '
+                f'merged into {pull_request["base"]["ref"]} '
+                f'({merge_commit_sha}).**\n\n{pull_request["body"]}',
+                'maintainer_can_modify': True,
+                'draft': False,
+            },
+        )
+        logger.info('Created a PR @ %s', pr_resp['url'])
 
 
 @process_event_actions('pull_request', {'labeled'})
@@ -249,3 +268,20 @@ async def on_label_added_to_merged_pr(
         return
     else:
         logger.info('Backport PR branch: `%s`', backport_pr_branch)
+
+    logger.info('Creating a backport PR...')
+    pr_resp = await gh_api.post(
+        repository['pulls_url'],
+        data={
+            'title': f'[PR #{number}/{merge_commit_sha} backport]'
+            f'[{target_branch}] {pull_request["title"]}',
+            'head': backport_pr_branch,
+            'base': target_branch,
+            'body': f'**This is a backport of PR #{number} as '
+            f'merged into {pull_request["base"]["ref"]} '
+            f'({merge_commit_sha}).**\n\n{pull_request["body"]}',
+            'maintainer_can_modify': True,
+            'draft': False,
+        },
+    )
+    logger.info('Created a PR @ %s', pr_resp['url'])
