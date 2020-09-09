@@ -6,7 +6,7 @@ import pathlib
 import tempfile
 
 from anyio import run_in_thread
-from gidgethub import BadRequest
+from gidgethub import BadRequest, ValidationError
 from pygit2 import (
     clone_repository, GitError,
     RemoteCallbacks, Signature, UserPass,
@@ -229,6 +229,12 @@ async def on_merge_of_labeled_pr(
                 number, merge_commit_sha, target_branch,
             )
             continue
+        except ValidationError as val_err:
+            logger.info(
+                'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
+                number, merge_commit_sha, target_branch, val_err,
+            )
+            continue
         else:
             logger.info('Created a PR @ %s', pr_resp['url'])
 
@@ -318,6 +324,12 @@ async def on_label_added_to_merged_pr(
             'of insufficient GitHub App Installation privileges to '
             'create pull requests',
             number, merge_commit_sha, target_branch,
+        )
+        return
+    except ValidationError as val_err:
+        logger.info(
+            'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
+            number, merge_commit_sha, target_branch, val_err,
         )
         return
     else:
