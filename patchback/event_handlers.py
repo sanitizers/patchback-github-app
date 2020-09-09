@@ -1,5 +1,6 @@
 """Webhook event handlers."""
 
+import http
 import logging
 import pathlib
 import tempfile
@@ -216,7 +217,7 @@ async def on_merge_of_labeled_pr(
             )
         except BadRequest as bad_req_err:
             if (
-                    bad_req_err.status_code != 400 or
+                    bad_req_err.status_code != http.client.FORBIDDEN or
                     str(bad_req_err) != 'Resource not accessible '
                     'by integration'
             ):
@@ -308,7 +309,7 @@ async def on_label_added_to_merged_pr(
         )
     except BadRequest as bad_req_err:
         if (
-                bad_req_err.status_code != 400 or
+                bad_req_err.status_code != http.client.FORBIDDEN or
                 str(bad_req_err) != 'Resource not accessible by integration'
         ):
             raise
