@@ -57,16 +57,22 @@ def backport_pr_sync(
             suffix=f'---PR-{pr_number}.git',
     ) as tmp_dir:
         logger.info('Created a temporary dir: `%s`', tmp_dir)
-        repo = clone_repository(
-            url=repo_remote,
-            path=pathlib.Path(tmp_dir),
-            bare=True,
-            checkout_branch=target_branch,
-# TODO: figure out if using "remote" would be cleaner:
-#            remote=,  # callable (Repository, name, url) -> Remote
-            callbacks=token_auth_callbacks,
-        )
-        logger.info('Checked out `%s@%s`', repo_remote, target_branch)
+        try:
+            repo = clone_repository(
+                url=repo_remote,
+                path=pathlib.Path(tmp_dir),
+                bare=True,
+                checkout_branch=target_branch,
+                # TODO: figure out if using "remote" would be cleaner:
+                # remote=,  # callable (Repository, name, url) -> Remote
+                callbacks=token_auth_callbacks,
+            )
+        except KeyError as key_err:
+            raise LookupError(
+                f'Failed to check out branch {target_branch}',
+            ) from key_err
+        else:
+            logger.info('Checked out `%s@%s`', repo_remote, target_branch)
         repo.remotes.add_fetch(  # phantom merge heads
             'origin',
             # '+refs/pull/*/merge:refs/merge/origin/*',
@@ -151,14 +157,22 @@ async def on_merge_of_labeled_pr(
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
     logger.info('gh_api=%s', gh_api)
     for target_branch in target_branches:
-        backport_pr_branch = await run_in_thread(
-            backport_pr_sync,
-            number, merge_commit_sha, target_branch,
-            repository['full_name'],
-            repository['clone_url'],
-            (await RUNTIME_CONTEXT.app_installation.get_token()).token,
-        )
-        logger.info('Backport PR branch: `%s`', backport_pr_branch)
+        try:
+            backport_pr_branch = await run_in_thread(
+                backport_pr_sync,
+                number, merge_commit_sha, target_branch,
+                repository['full_name'],
+                repository['clone_url'],
+                (await RUNTIME_CONTEXT.app_installation.get_token()).token,
+            )
+        except LookupError:
+            logger.info(
+                'Failed to backport PR #%d (commit `%s`) to `%s`',
+                number, merge_commit_sha, target_branch,
+            )
+            return
+        else:
+            logger.info('Backport PR branch: `%s`', backport_pr_branch)
 
 
 @process_event_actions('pull_request', {'labeled'})
@@ -193,11 +207,19 @@ async def on_label_added_to_merged_pr(
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
     logger.info('gh_api=%s', gh_api)
 
-    backport_pr_branch = await run_in_thread(
-        backport_pr_sync,
-        number, merge_commit_sha, target_branch,
-        repository['full_name'],
-        repository['clone_url'],
-        (await RUNTIME_CONTEXT.app_installation.get_token()).token,
-    )
-    logger.info('Backport PR branch: `%s`', backport_pr_branch)
+    try:
+        backport_pr_branch = await run_in_thread(
+            backport_pr_sync,
+            number, merge_commit_sha, target_branch,
+            repository['full_name'],
+            repository['clone_url'],
+            (await RUNTIME_CONTEXT.app_installation.get_token()).token,
+        )
+    except LookupError:
+        logger.info(
+            'Failed to backport PR #%d (commit `%s`) to `%s`',
+            number, merge_commit_sha, target_branch,
+        )
+        return
+    else:
+        logger.info('Backport PR branch: `%s`', backport_pr_branch)
