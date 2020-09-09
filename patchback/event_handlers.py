@@ -56,6 +56,7 @@ def backport_pr_sync(
             prefix=f'{repo_slug.replace("/", "--")}---{target_branch}---',
             suffix=f'---PR-{pr_number}.git',
     ) as tmp_dir:
+        logger.info('Created a temporary dir: `%s`', tmp_dir)
         repo = clone_repository(
             url=repo_remote,
             path=pathlib.Path(tmp_dir),
@@ -65,6 +66,7 @@ def backport_pr_sync(
 #            remote=,  # callable (Repository, name, url) -> Remote
             callbacks=token_auth_callbacks,
         )
+        logger.info('Checked out `%s@%s`', repo_remote, target_branch)
         repo.remotes.add_fetch(  # phantom merge heads
             'origin',
             # '+refs/pull/*/merge:refs/merge/origin/*',
@@ -77,12 +79,17 @@ def backport_pr_sync(
         )
         github_upstream_remote = repo.remotes['origin']
         github_upstream_remote.fetch(callbacks=token_auth_callbacks)
+        logger.info('Fetched read-only PR refs')
 
         repo.remotes.add_push(  # PR backport branch
             'origin',
             ':'.join((target_branch, backport_pr_branch))
         )
 
+        logger.info(
+            'Cherry-picking `%s` into `%s`',
+            merge_commit_sha, backport_pr_branch,
+        )
         # Ref: https://www.pygit2.org/recipes/git-cherry-pick.html
         cherry = repo.revparse_single(merge_commit_sha)
         backport_branch = repo.create_branch(
@@ -105,10 +112,13 @@ def backport_pr_sync(
             tree_id,
             [backport_branch.target],
         )
+        logger.info('Backported the commit into `%s`', backport_pr_branch)
+        logger.info('Pushing `%s` back to GitHub...', backport_pr_branch)
         github_upstream_remote.push(
             [f'HEAD:refs/heads/{backport_pr_branch}'],
             callbacks=token_auth_callbacks,  # clone callbacks aren't preserved
         )
+        logger.info('Push to GitHub succeeded...')
 
     return backport_pr_branch
 
