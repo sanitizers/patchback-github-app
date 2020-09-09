@@ -5,7 +5,10 @@ import pathlib
 import tempfile
 
 from anyio import run_in_thread
-from pygit2 import clone_repository, RemoteCallbacks, Signature, UserPass
+from pygit2 import (
+    clone_repository, GitError,
+    RemoteCallbacks, Signature, UserPass,
+)
 
 from octomachinery.app.routing import process_event_actions
 from octomachinery.app.routing.decorators import process_webhook_payload
@@ -120,11 +123,21 @@ def backport_pr_sync(
         )
         logger.info('Backported the commit into `%s`', backport_pr_branch)
         logger.info('Pushing `%s` back to GitHub...', backport_pr_branch)
-        github_upstream_remote.push(
-            [f'HEAD:refs/heads/{backport_pr_branch}'],
-            callbacks=token_auth_callbacks,  # clone callbacks aren't preserved
-        )
-        logger.info('Push to GitHub succeeded...')
+        try:
+            github_upstream_remote.push(
+                [f'HEAD:refs/heads/{backport_pr_branch}'],
+                callbacks=token_auth_callbacks,  # clone callbacks aren't preserved
+            )
+        except GitError as pg2_err:
+            if str(pg2_err) != 'unexpected http status code: 403':
+                raise
+            raise PermissionError(
+                'Current GitHub App installation does not grant sufficient '
+                f'privileges for pushing to {repo_remote}. `Contents: '
+                'write` permission is necessary to fix this.',
+            ) from pg2_err
+        else:
+            logger.info('Push to GitHub succeeded...')
 
     return backport_pr_branch
 
@@ -170,7 +183,12 @@ async def on_merge_of_labeled_pr(
                 'Failed to backport PR #%d (commit `%s`) to `%s`',
                 number, merge_commit_sha, target_branch,
             )
-            return
+        except PermissionError:
+            logger.info(
+                'Failed to backport PR #%d (commit `%s`) to `%s` because '
+                'of insufficient GitHub App Installation privileges',
+                number, merge_commit_sha, target_branch,
+            )
         else:
             logger.info('Backport PR branch: `%s`', backport_pr_branch)
 
@@ -217,7 +235,15 @@ async def on_label_added_to_merged_pr(
         )
     except LookupError:
         logger.info(
-            'Failed to backport PR #%d (commit `%s`) to `%s`',
+            'Failed to backport PR #%d (commit `%s`) to `%s` '
+            'because the target branch does not exist',
+            number, merge_commit_sha, target_branch,
+        )
+        return
+    except PermissionError:
+        logger.info(
+            'Failed to backport PR #%d (commit `%s`) to `%s` because '
+            'of insufficient GitHub App Installation privileges',
             number, merge_commit_sha, target_branch,
         )
         return
