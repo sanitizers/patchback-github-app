@@ -155,7 +155,7 @@ async def on_merge_of_labeled_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to labeled pull request merge."""
-    labels = pull_request['labels']
+    labels = [label['name'] for label in pull_request['labels']]
     target_branches = [
         label[BACKPORT_LABEL_LEN:] for label in labels
         if label.startswith(BACKPORT_LABEL_PREFIX)
