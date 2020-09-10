@@ -180,7 +180,7 @@ async def on_merge_of_labeled_pr(
             pull_request['title'],
             pull_request['body'],
             pull_request['base']['ref'],
-            pull_request['head']['ref'],
+            pull_request['head']['sha'],
             merge_commit_sha,
             target_branch,
             repository['pulls_url'],
@@ -223,7 +223,7 @@ async def on_label_added_to_merged_pr(
         pull_request['title'],
         pull_request['body'],
         pull_request['base']['ref'],
-        pull_request['head']['ref'],
+        pull_request['head']['sha'],
         merge_commit_sha,
         target_branch,
         repository['pulls_url'],
@@ -237,7 +237,7 @@ async def process_pr_backport_labels(
         pr_title,
         pr_body,
         pr_base_ref,
-        pr_head_ref,
+        pr_head_sha,
         pr_merge_commit,
         target_branch,
         pr_api_url, repo_slug,
@@ -259,7 +259,7 @@ async def process_pr_backport_labels(
                 # NOTE: not in PR. PRs only show checks from PR branch
                 # NOTE: HEAD. This is a bit imprecise but
                 # NOTE: it is what it is.
-                'head_sha': pr_head_ref,
+                'head_sha': pr_head_sha,
                 'status': 'queued',
                 'started_at': f'{datetime.utcnow().isoformat()}Z',
             },
