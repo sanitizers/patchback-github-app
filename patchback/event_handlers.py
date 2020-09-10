@@ -39,7 +39,8 @@ def ensure_pr_merged(event_handler):
 
 
 def backport_pr_sync(
-        pr_number: int, merge_commit_sha: str, target_branch: str,
+        pr_number: int, merge_commit_sha: str,
+        original_branch: str, target_branch: str,
         repo_slug: str, repo_remote: str, installation_access_token: str,
 ) -> None:
     """Returns a branch with backported PR pushed to GitHub.
@@ -108,7 +109,11 @@ def backport_pr_sync(
             repo.branches[f'origin/{target_branch}'].peel(),
         )
 
-        base = repo.merge_base(cherry.oid, backport_branch.target)
+        base = repo.merge_base(
+            cherry.oid,
+            # NOTE: emulating 3-argument `git cherry-pick --onto` mode:
+            repo.branches[f'origin/{original_branch}'].target,
+        )
         base_tree = cherry.parents[0].tree
 
         index = repo.merge_trees(base_tree, backport_branch, cherry)
@@ -296,6 +301,7 @@ async def process_pr_backport_labels(
             backport_pr_sync,
             pr_number,
             pr_merge_commit,
+            pr_base_ref,
             target_branch,
             repo_slug,
             git_url,
