@@ -67,7 +67,6 @@ def backport_pr_sync(
                 url=repo_remote,
                 path=pathlib.Path(tmp_dir),
                 bare=True,
-                checkout_branch=target_branch,
                 # TODO: figure out if using "remote" would be cleaner:
                 # remote=,  # callable (Repository, name, url) -> Remote
                 callbacks=token_auth_callbacks,
