@@ -166,7 +166,6 @@ async def on_merge_of_labeled_pr(
         return
 
     merge_commit_sha = pull_request['merge_commit_sha']
-    gh_api = RUNTIME_CONTEXT.app_installation_client
 
     logger.info(
         'PR#%s is labeled with "%s". It needs to be backported to %s',
@@ -175,71 +174,17 @@ async def on_merge_of_labeled_pr(
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
 
     for target_branch in target_branches:
-        try:
-            backport_pr_branch = await run_in_thread(
-                backport_pr_sync,
-                number, merge_commit_sha, target_branch,
-                repository['full_name'],
-                repository['clone_url'],
-                (await RUNTIME_CONTEXT.app_installation.get_token()).token,
-            )
-        except LookupError:
-            logger.info(
-                'Failed to backport PR #%d (commit `%s`) to `%s`',
-                number, merge_commit_sha, target_branch,
-            )
-            continue
-        except PermissionError:
-            logger.info(
-                'Failed to backport PR #%d (commit `%s`) to `%s` because '
-                'of insufficient GitHub App Installation privileges to '
-                'modify the repo contents',
-                number, merge_commit_sha, target_branch,
-            )
-            continue
-        else:
-            logger.info('Backport PR branch: `%s`', backport_pr_branch)
-
-        logger.info('Creating a backport PR...')
-        try:
-            pr_resp = await gh_api.post(
-                repository['pulls_url'],
-                data={
-                    'title':
-                    f'[PR #{number}/{merge_commit_sha} backport]'
-                    f'[{target_branch}] {pull_request["title"]}',
-                    'head': backport_pr_branch,
-                    'base': target_branch,
-                    'body': f'**This is a backport of PR #{number} as '
-                    f'merged into {pull_request["base"]["ref"]} '
-                    f'({merge_commit_sha}).**'
-                    f'\n\n{pull_request["body"]}',
-                    'maintainer_can_modify': True,
-                    'draft': False,
-                },
-            )
-        except ValidationError as val_err:
-            logger.info(
-                'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
-                number, merge_commit_sha, target_branch, val_err,
-            )
-            continue
-        except BadRequest as bad_req_err:
-            if (
-                    bad_req_err.status_code != http.client.FORBIDDEN or
-                    str(bad_req_err) != 'Resource not accessible '
-                    'by integration'
-            ):
-                raise
-            logger.info(
-                'Failed to backport PR #%d (commit `%s`) to `%s` because '
-                'of insufficient GitHub App Installation privileges to '
-                'create pull requests',
-                number, merge_commit_sha, target_branch,
-            )
-            continue
-        else:
-            logger.info('Created a PR @ %s', pr_resp['url'])
+        await process_pr_backport_labels(
+            number,
+            pull_request['title'],
+            pull_request['body'],
+            pull_request['base']['ref'],
+            merge_commit_sha,
+            target_branch,
+            repository['pulls_url'],
+            repository['full_name'],
+            repository['clone_url'],
+        )
 
 
 @process_event_actions('pull_request', {'labeled'})
@@ -265,27 +210,52 @@ async def on_label_added_to_merged_pr(
 
     target_branch = label_name[BACKPORT_LABEL_LEN:]
     merge_commit_sha = pull_request['merge_commit_sha']
-    gh_api = RUNTIME_CONTEXT.app_installation_client
 
     logger.info(
         'PR#%s got labeled with "%s". It needs to be backported to %s',
         number, label_name, target_branch,
     )
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
+    await process_pr_backport_labels(
+        number,
+        pull_request['title'],
+        pull_request['body'],
+        pull_request['base']['ref'],
+        merge_commit_sha,
+        target_branch,
+        repository['pulls_url'],
+        repository['full_name'],
+        repository['clone_url'],
+    )
+
+
+async def process_pr_backport_labels(
+        pr_number,
+        pr_title,
+        pr_body,
+        pr_base_ref,
+        pr_merge_commit,
+        target_branch,
+        pr_api_url, repo_slug,
+        git_url,
+) -> None:
+    gh_api = RUNTIME_CONTEXT.app_installation_client
 
     try:
         backport_pr_branch = await run_in_thread(
             backport_pr_sync,
-            number, merge_commit_sha, target_branch,
-            repository['full_name'],
-            repository['clone_url'],
+            pr_number,
+            pr_merge_commit,
+            target_branch,
+            repo_slug,
+            git_url,
             (await RUNTIME_CONTEXT.app_installation.get_token()).token,
         )
     except LookupError:
         logger.info(
             'Failed to backport PR #%d (commit `%s`) to `%s` '
             'because the target branch does not exist',
-            number, merge_commit_sha, target_branch,
+            pr_number, pr_merge_commit, target_branch,
         )
         return
     except PermissionError:
@@ -293,7 +263,7 @@ async def on_label_added_to_merged_pr(
             'Failed to backport PR #%d (commit `%s`) to `%s` because '
             'of insufficient GitHub App Installation privileges to '
             'modify the repo contents',
-            number, merge_commit_sha, target_branch,
+            pr_number, pr_merge_commit, target_branch,
         )
         return
     else:
@@ -302,15 +272,15 @@ async def on_label_added_to_merged_pr(
     logger.info('Creating a backport PR...')
     try:
         pr_resp = await gh_api.post(
-            repository['pulls_url'],
+            pr_api_url,
             data={
-                'title': f'[PR #{number}/{merge_commit_sha[:8]} backport]'
-                f'[{target_branch}] {pull_request["title"]}',
+                'title': f'[PR #{pr_number}/{pr_merge_commit[:8]} backport]'
+                f'[{target_branch}] {pr_title}',
                 'head': backport_pr_branch,
                 'base': target_branch,
-                'body': f'**This is a backport of PR #{number} as '
-                f'merged into {pull_request["base"]["ref"]} '
-                f'({merge_commit_sha}).**\n\n{pull_request["body"]}',
+                'body': f'**This is a backport of PR #{pr_number} as '
+                f'merged into {pr_base_ref} '
+                f'({pr_merge_commit}).**\n\n{pr_body}',
                 'maintainer_can_modify': True,
                 'draft': False,
             },
@@ -318,7 +288,7 @@ async def on_label_added_to_merged_pr(
     except ValidationError as val_err:
         logger.info(
             'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
-            number, merge_commit_sha, target_branch, val_err,
+            pr_number, pr_merge_commit, target_branch, val_err,
         )
         return
     except BadRequest as bad_req_err:
@@ -331,7 +301,7 @@ async def on_label_added_to_merged_pr(
             'Failed to backport PR #%d (commit `%s`) to `%s` because '
             'of insufficient GitHub App Installation privileges to '
             'create pull requests',
-            number, merge_commit_sha, target_branch,
+            pr_number, pr_merge_commit, target_branch,
         )
         return
     else:
