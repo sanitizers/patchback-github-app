@@ -102,8 +102,9 @@ def backport_pr_sync(
         )
         # Ref: https://www.pygit2.org/recipes/git-cherry-pick.html
         cherry = repo.revparse_single(merge_commit_sha)
-        backport_branch = repo.create_branch(
-            backport_pr_branch, repo.branches[target_branch].peel(),
+        backport_branch = repo.branches.local.create(
+            backport_pr_branch,
+            repo.branches[f'origin/{target_branch}'].peel(),
         )
 
         base = repo.merge_base(cherry.oid, backport_branch.target)
