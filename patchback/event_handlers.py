@@ -215,6 +215,12 @@ async def on_merge_of_labeled_pr(
                     'draft': False,
                 },
             )
+        except ValidationError as val_err:
+            logger.info(
+                'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
+                number, merge_commit_sha, target_branch, val_err,
+            )
+            continue
         except BadRequest as bad_req_err:
             if (
                     bad_req_err.status_code != http.client.FORBIDDEN or
@@ -227,12 +233,6 @@ async def on_merge_of_labeled_pr(
                 'of insufficient GitHub App Installation privileges to '
                 'create pull requests',
                 number, merge_commit_sha, target_branch,
-            )
-            continue
-        except ValidationError as val_err:
-            logger.info(
-                'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
-                number, merge_commit_sha, target_branch, val_err,
             )
             continue
         else:
@@ -302,7 +302,7 @@ async def on_label_added_to_merged_pr(
         pr_resp = await gh_api.post(
             repository['pulls_url'],
             data={
-                'title': f'[PR #{number}/{merge_commit_sha} backport]'
+                'title': f'[PR #{number}/{merge_commit_sha[:8]} backport]'
                 f'[{target_branch}] {pull_request["title"]}',
                 'head': backport_pr_branch,
                 'base': target_branch,
@@ -313,6 +313,12 @@ async def on_label_added_to_merged_pr(
                 'draft': False,
             },
         )
+    except ValidationError as val_err:
+        logger.info(
+            'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
+            number, merge_commit_sha, target_branch, val_err,
+        )
+        return
     except BadRequest as bad_req_err:
         if (
                 bad_req_err.status_code != http.client.FORBIDDEN or
@@ -324,12 +330,6 @@ async def on_label_added_to_merged_pr(
             'of insufficient GitHub App Installation privileges to '
             'create pull requests',
             number, merge_commit_sha, target_branch,
-        )
-        return
-    except ValidationError as val_err:
-        logger.info(
-            'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
-            number, merge_commit_sha, target_branch, val_err,
         )
         return
     else:
