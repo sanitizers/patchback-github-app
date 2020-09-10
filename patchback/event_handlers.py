@@ -305,4 +305,4 @@ async def process_pr_backport_labels(
         )
         return
     else:
-        logger.info('Created a PR @ %s', pr_resp['url'])
+        logger.info('Created a PR @ %s', pr_resp['html_url'])
