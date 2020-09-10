@@ -168,9 +168,12 @@ async def on_merge_of_labeled_pr(
     merge_commit_sha = pull_request['merge_commit_sha']
     gh_api = RUNTIME_CONTEXT.app_installation_client
 
-    logger.info('PR#%s is labeled with "%s"', number, labels)
+    logger.info(
+        'PR#%s is labeled with "%s". It needs to be backported to %s',
+        number, labels, ', '.join(target_branches),
+    )
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
-    logger.info('gh_api=%s', gh_api)
+
     for target_branch in target_branches:
         try:
             backport_pr_branch = await run_in_thread(
@@ -269,7 +272,6 @@ async def on_label_added_to_merged_pr(
         number, label_name, target_branch,
     )
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
-    logger.info('gh_api=%s', gh_api)
 
     try:
         backport_pr_branch = await run_in_thread(
