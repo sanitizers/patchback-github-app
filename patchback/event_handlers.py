@@ -243,27 +243,45 @@ async def process_pr_backport_labels(
     gh_api = RUNTIME_CONTEXT.app_installation_client
     check_runs_base_uri = f'/repos/{repo_slug}/check-runs'
     check_run_name = f'Backport to {target_branch}'
+    use_checks_api = False
 
-    checks_resp = await gh_api.post(
-        check_runs_base_uri,
-        preview_api_version='antiope',
-        data={
-            'name': check_run_name,
-            'head_sha': pr_merge_commit,
-            'status': 'queued',
-            'started_at': f'{datetime.utcnow().isoformat()}Z',
-        },
-    )
+    try:
+        checks_resp = await gh_api.post(
+            check_runs_base_uri,
+            preview_api_version='antiope',
+            data={
+                'name': check_run_name,
+                'head_sha': pr_merge_commit,
+                'status': 'queued',
+                'started_at': f'{datetime.utcnow().isoformat()}Z',
+            },
+        )
+    except BadRequest as bad_req_err:
+        if (
+                bad_req_err.status_code != http.client.FORBIDDEN or
+                str(bad_req_err) != 'Resource not accessible by integration'
+        ):
+            raise
+        logger.info(
+            'Failed to report PR #%d (commit `%s`) backport status updates via Checks API because '
+            'of insufficient GitHub App Installation privileges to '
+            'create pull requests: %s',
+            pr_number, pr_merge_commit, bad_req_err,
+        )
+    else:
+        check_runs_updates_uri = f'{check_runs_base_uri}/{checks_resp["id"]:d}'
+        use_checks_api = True
+        logger.info('Checks API is available')
 
-    check_runs_updates_uri = f'{check_runs_base_uri}/{checks_resp["id"]:d}'
-    checks_resp = await gh_api.patch(
-        check_runs_updates_uri,
-        preview_api_version='antiope',
-        data={
-            'name': check_run_name,
-            'status': 'in_progress',
-        },
-    )
+    if use_checks_api:
+        await gh_api.patch(
+            check_runs_updates_uri,
+            preview_api_version='antiope',
+            data={
+                'name': check_run_name,
+                'status': 'in_progress',
+            },
+        )
 
     try:
         backport_pr_branch = await run_in_thread(
@@ -281,6 +299,8 @@ async def process_pr_backport_labels(
             'because the target branch does not exist',
             pr_number, pr_merge_commit, target_branch,
         )
+        if not use_checks_api:
+            return
         await gh_api.patch(
             check_runs_updates_uri,
             preview_api_version='antiope',
@@ -305,6 +325,8 @@ async def process_pr_backport_labels(
             'modify the repo contents',
             pr_number, pr_merge_commit, target_branch,
         )
+        if not use_checks_api:
+            return
         await gh_api.patch(
             check_runs_updates_uri,
             preview_api_version='antiope',
@@ -325,19 +347,20 @@ async def process_pr_backport_labels(
     else:
         logger.info('Backport PR branch: `%s`', backport_pr_branch)
 
-    checks_resp = await gh_api.patch(
-        check_runs_updates_uri,
-        preview_api_version='antiope',
-        data={
-            'name': check_run_name,
-            'status': 'in_progress',
-            'output': {
-                'title': f'{check_run_name}: cherry-pick succeeded',
-                'text': 'PR branch created, proceeding with making a PR.',
-                'summary': f'Backport PR branch: `{backport_pr_branch}',
+    if use_checks_api:
+        await gh_api.patch(
+            check_runs_updates_uri,
+            preview_api_version='antiope',
+            data={
+                'name': check_run_name,
+                'status': 'in_progress',
+                'output': {
+                    'title': f'{check_run_name}: cherry-pick succeeded',
+                    'text': 'PR branch created, proceeding with making a PR.',
+                    'summary': f'Backport PR branch: `{backport_pr_branch}',
+                },
             },
-        },
-    )
+        )
 
     logger.info('Creating a backport PR...')
     try:
@@ -360,6 +383,8 @@ async def process_pr_backport_labels(
             'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
             pr_number, pr_merge_commit, target_branch, val_err,
         )
+        if not use_checks_api:
+            return
         await gh_api.patch(
             check_runs_updates_uri,
             preview_api_version='antiope',
@@ -390,6 +415,8 @@ async def process_pr_backport_labels(
             'create pull requests',
             pr_number, pr_merge_commit, target_branch,
         )
+        if not use_checks_api:
+            return
         await gh_api.patch(
             check_runs_updates_uri,
             preview_api_version='antiope',
@@ -411,18 +438,19 @@ async def process_pr_backport_labels(
     else:
         logger.info('Created a PR @ %s', pr_resp['html_url'])
 
-    await gh_api.patch(
-        check_runs_updates_uri,
-        preview_api_version='antiope',
-        data={
-            'name': check_run_name,
-            'status': 'completed',
-            'conclusion': 'success',
-            'completed_at': f'{datetime.utcnow().isoformat()}Z',
-            'output': {
-                'title': f'{check_run_name}: backport PR created',
-                'text': f'Backported as {pr_resp["html_url"]}',
-                'summary': f'Backport PR branch: `{backport_pr_branch}',
+    if use_checks_api:
+        await gh_api.patch(
+            check_runs_updates_uri,
+            preview_api_version='antiope',
+            data={
+                'name': check_run_name,
+                'status': 'completed',
+                'conclusion': 'success',
+                'completed_at': f'{datetime.utcnow().isoformat()}Z',
+                'output': {
+                    'title': f'{check_run_name}: backport PR created',
+                    'text': f'Backported as {pr_resp["html_url"]}',
+                    'summary': f'Backport PR branch: `{backport_pr_branch}',
+                },
             },
-        },
-    )
+        )
