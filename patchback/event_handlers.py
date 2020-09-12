@@ -70,7 +70,7 @@ def backport_pr_sync(
             '--work-tree', tmp_dir,
             '-c', 'user.email=patchback@sanitizers.bot',
             '-c', 'user.name=Patchback',
-            '-c', 'protocol.version=2',
+            # '-c', 'protocol.version=2',  # Needs Git 2.18+
         )
         spawn_proc(*git_cmd, 'remote', 'add', 'origin', repo_remote_w_creds)
         try:
