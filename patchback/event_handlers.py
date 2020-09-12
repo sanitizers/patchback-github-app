@@ -50,7 +50,7 @@ def backport_pr_sync(
     """
     backport_pr_branch = (
         f'patchback/backports/{target_branch}/'
-        f'{merge_commit_sha}/pr{pr_number}'
+        f'{merge_commit_sha}/pr-{pr_number}'
     )
     repo_remote_w_creds = repo_remote.replace(
         # NOTE: this is a hack for auth to work
