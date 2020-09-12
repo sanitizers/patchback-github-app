@@ -294,7 +294,6 @@ async def process_pr_backport_labels(
             backport_pr_sync,
             pr_number,
             pr_merge_commit,
-            pr_base_ref,
             target_branch,
             repo_slug,
             git_url,
