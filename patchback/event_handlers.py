@@ -5,13 +5,10 @@ import logging
 import pathlib
 import tempfile
 from datetime import datetime
+from subprocess import CalledProcessError, check_output, check_call
 
 from anyio import run_in_thread
 from gidgethub import BadRequest, ValidationError
-from pygit2 import (
-    clone_repository, GitError,
-    RemoteCallbacks, Signature, UserPass,
-)
 
 from octomachinery.app.routing import process_event_actions
 from octomachinery.app.routing.decorators import process_webhook_payload
@@ -19,6 +16,8 @@ from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 
 
 logger = logging.getLogger(__name__)
+
+spawn_proc = lambda *cmd: check_call(cmd, env={})
 
 BACKPORT_LABEL_PREFIX = 'backport-'
 BACKPORT_LABEL_LEN = len(BACKPORT_LABEL_PREFIX)
@@ -39,8 +38,7 @@ def ensure_pr_merged(event_handler):
 
 
 def backport_pr_sync(
-        pr_number: int, merge_commit_sha: str,
-        original_branch: str, target_branch: str,
+        pr_number: int, merge_commit_sha: str, target_branch: str,
         repo_slug: str, repo_remote: str, installation_access_token: str,
 ) -> None:
     """Returns a branch with backported PR pushed to GitHub.
@@ -54,96 +52,91 @@ def backport_pr_sync(
         f'patchback/backports/{target_branch}/'
         f'{merge_commit_sha}/pr{pr_number}'
     )
-    token_auth_callbacks = RemoteCallbacks(
-        credentials=UserPass(
-            'x-access-token', installation_access_token,
-        ),
+    repo_remote_w_creds = repo_remote.replace(
+        # NOTE: this is a hack for auth to work
+        'https://github.com/',
+        f'https://x-access-token:{installation_access_token}@github.com/',
+        1,  # count
     )
     with tempfile.TemporaryDirectory(
             prefix=f'{repo_slug.replace("/", "--")}---{target_branch}---',
             suffix=f'---PR-{pr_number}.git',
     ) as tmp_dir:
         logger.info('Created a temporary dir: `%s`', tmp_dir)
+        check_call(('git', 'init', tmp_dir), env={})
+        git_cmd = (
+            'git',
+            '--git-dir', str(pathlib.Path(tmp_dir) / '.git'),
+            '--work-tree', tmp_dir,
+            '-c', 'user.email=patchback@sanitizers.bot',
+            '-c', 'user.name=Patchback',
+            '-c', 'protocol.version=2',
+        )
+        spawn_proc(*git_cmd, 'remote', 'add', 'origin', repo_remote_w_creds)
         try:
-            repo = clone_repository(
-                url=repo_remote,
-                path=pathlib.Path(tmp_dir),
-                bare=True,
-                # TODO: figure out if using "remote" would be cleaner:
-                # remote=,  # callable (Repository, name, url) -> Remote
-                callbacks=token_auth_callbacks,
-            )
-        except KeyError as key_err:
-            raise LookupError(
-                f'Failed to check out branch {target_branch}',
-            ) from key_err
+            spawn_proc(*git_cmd, 'fetch', '--prune', 'origin')
+        except CalledProcessError as proc_err:
+            raise LookupError(f'Failed to fetch {repo_remote}') from proc_err
         else:
-            logger.info('Checked out `%s@%s`', repo_remote, target_branch)
-        repo.remotes.add_fetch(  # phantom merge heads
-            'origin',
-            # '+refs/pull/*/merge:refs/merge/origin/*',
-            f'+refs/pull/{pr_number}/merge:refs/merge/origin/{pr_number}',
-        )
-        repo.remotes.add_fetch(  # read-only PR branch heads
-            'origin',
-            # '+refs/pull/*/head:refs/pull/origin/*',
-            f'+refs/pull/{pr_number}/head:refs/pull/origin/{pr_number}',
-        )
-        github_upstream_remote = repo.remotes['origin']
-        github_upstream_remote.fetch(callbacks=token_auth_callbacks)
-        logger.info('Fetched read-only PR refs')
+            logger.info('Fetched `%s`', repo_remote)
 
-        repo.remotes.add_push(  # PR backport branch
-            'origin',
-            ':'.join((target_branch, backport_pr_branch))
-        )
+        try:
+            check_call(
+                (
+                    *git_cmd, 'checkout',
+                    '-b', backport_pr_branch, f'origin/{target_branch}',
+                ),
+            )
+        except CalledProcessError as proc_err:
+            raise LookupError(
+                f'Failed to find branch {target_branch}',
+            ) from proc_err
+        else:
+            logger.info('Checked out `%s`', backport_pr_branch)
 
         logger.info(
-            'Cherry-picking `%s` into `%s`',
+            'Cherry-picking `%s` into `%s`...',
             merge_commit_sha, backport_pr_branch,
         )
-        # Ref: https://www.pygit2.org/recipes/git-cherry-pick.html
-        cherry = repo.revparse_single(merge_commit_sha)
-        backport_branch = repo.branches.local.create(
-            backport_pr_branch,
-            repo.branches[f'origin/{target_branch}'].peel(),
+        merge_check_cmd = (
+            *git_cmd, 'rev-list',
+            '--no-walk', '--count', '--merges',
+            merge_commit_sha, '--',
         )
-
-        base = repo.merge_base(
-            cherry.oid,
-            # NOTE: emulating 3-argument `git cherry-pick --onto` mode:
-            repo.branches[f'origin/{original_branch}'].target,
+        logger.info(
+            '`%s` is {} a merge commit',
+            merge_commit_sha, backport_pr_branch,
         )
-        base_tree = cherry.parents[0].tree
+        is_merge_commit = int(check_output(merge_check_cmd, env={})) > 0
 
-        index = repo.merge_trees(base_tree, backport_branch, cherry)
-        tree_id = index.write_tree(repo)
+        try:
+            spawn_proc(
+                *git_cmd, 'cherry-pick', '-x',
+                *(('--mainline', '1') if is_merge_commit else ()),
+                merge_commit_sha,
+            )
+        except CalledProcessError as proc_err:
+            raise ValueError(
+                f'Failed to cleanly apply {merge_commit_sha} '
+                f'on top of {backport_pr_branch}',
+            ) from proc_err
+        else:
+            logger.info('Backported the commit into `%s`', backport_pr_branch)
 
-        author = cherry.author
-        committer = Signature('Patchback', 'patchback@sanitizers.bot')
-
-        repo.create_commit(
-            backport_branch.name,
-            author, committer,
-            cherry.message,
-            tree_id,
-            [backport_branch.target],
-        )
-        logger.info('Backported the commit into `%s`', backport_pr_branch)
         logger.info('Pushing `%s` back to GitHub...', backport_pr_branch)
         try:
-            github_upstream_remote.push(
-                [f'HEAD:refs/heads/{backport_pr_branch}'],
-                callbacks=token_auth_callbacks,  # clone callbacks aren't preserved
+            spawn_proc(
+                *git_cmd, 'push',
+                # We manage the branch and thus don't care about rewrites:
+                '--force-with-lease',
+                'origin', 'HEAD',
             )
-        except GitError as pg2_err:
-            if str(pg2_err) != 'unexpected http status code: 403':
-                raise
+        except CalledProcessError as proc_err:
             raise PermissionError(
                 'Current GitHub App installation does not grant sufficient '
                 f'privileges for pushing to {repo_remote}. `Contents: '
                 'write` permission is necessary to fix this.',
-            ) from pg2_err
+            ) from proc_err
         else:
             logger.info('Push to GitHub succeeded...')
 
@@ -328,6 +321,31 @@ async def process_pr_backport_labels(
                     '— target branch does not exist',
                     'text': f'',
                     'summary': str(lu_err),
+                },
+            },
+        )
+        return
+    except ValueError as val_err:
+        logger.info(
+            'Failed to backport PR #%d (commit `%s`) to `%s` because '
+            'it conflicts with the target backport branch contents',
+            pr_number, pr_merge_commit, target_branch,
+        )
+        if not use_checks_api:
+            return
+        await gh_api.patch(
+            check_runs_updates_uri,
+            preview_api_version='antiope',
+            data={
+                'name': check_run_name,
+                'status': 'completed',
+                'conclusion': 'neutral',
+                'completed_at': f'{datetime.utcnow().isoformat()}Z',
+                'output': {
+                    'title': f'{check_run_name}: cherry-picking failed '
+                    '— conflicts found',
+                    'text': f'',
+                    'summary': str(val_err),
                 },
             },
         )
