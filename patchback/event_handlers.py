@@ -103,11 +103,11 @@ def backport_pr_sync(
             '--no-walk', '--count', '--merges',
             merge_commit_sha, '--',
         )
-        logger.info(
-            '`%s` is {} a merge commit',
-            merge_commit_sha, backport_pr_branch,
-        )
         is_merge_commit = int(check_output(merge_check_cmd, env={})) > 0
+        logger.info(
+            '`%s` is%s a merge commit',
+            merge_commit_sha, ('' if is_merge_commit else ' not'),
+        )
 
         try:
             spawn_proc(
