@@ -14,13 +14,12 @@ from octomachinery.app.routing import process_event_actions
 from octomachinery.app.routing.decorators import process_webhook_payload
 from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 
+from .config import get_patchback_config
+
 
 logger = logging.getLogger(__name__)
 
 spawn_proc = lambda *cmd: check_call(cmd, env={})
-
-BACKPORT_LABEL_PREFIX = 'backport-'
-BACKPORT_LABEL_LEN = len(BACKPORT_LABEL_PREFIX)
 
 
 def ensure_pr_merged(event_handler):
@@ -39,6 +38,7 @@ def ensure_pr_merged(event_handler):
 
 def backport_pr_sync(
         pr_number: int, merge_commit_sha: str, target_branch: str,
+        backport_branch_prefix: str,
         repo_slug: str, repo_remote: str, installation_access_token: str,
 ) -> None:
     """Returns a branch with backported PR pushed to GitHub.
@@ -49,7 +49,7 @@ def backport_pr_sync(
     ``target_branch`` and pushes it back to ``repo_remote``.
     """
     backport_pr_branch = (
-        f'patchback/backports/{target_branch}/'
+        f'{backport_branch_prefix}{target_branch}/'
         f'{merge_commit_sha}/pr-{pr_number}'
     )
     repo_remote_w_creds = repo_remote.replace(
@@ -154,14 +154,22 @@ async def on_merge_of_labeled_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to labeled pull request merge."""
+    repo_config = await get_patchback_config()
+    backport_label_len = len(repo_config.backport_label_prefix)
     labels = [label['name'] for label in pull_request['labels']]
     target_branches = [
-        label[BACKPORT_LABEL_LEN:] for label in labels
-        if label.startswith(BACKPORT_LABEL_PREFIX)
+        f'{repo_config.target_branch_prefix}{label[backport_label_len:]}'
+        for label in labels
+        if label.startswith(repo_config.backport_label_prefix)
     ]
 
     if not target_branches:
-        logger.info('PR#%s does not have backport labels, ignoring...', number)
+        logger.info(
+            'PR#%s does not have backport labels '
+            'starting with "%s", ignoring...',
+            number,
+            repo_config.backport_label_prefix,
+        )
         return
 
     merge_commit_sha = pull_request['merge_commit_sha']
@@ -181,6 +189,7 @@ async def on_merge_of_labeled_pr(
             pull_request['head']['sha'],
             merge_commit_sha,
             target_branch,
+            repo_config.backport_branch_prefix,
             repository['pulls_url'],
             repository['full_name'],
             repository['clone_url'],
@@ -199,16 +208,17 @@ async def on_label_added_to_merged_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to GitHub App pull request / issue label webhook event."""
+    repo_config = await get_patchback_config()
     label_name = label['name']
-    if not label_name.startswith(BACKPORT_LABEL_PREFIX):
+    if not label_name.startswith(repo_config.backport_label_prefix):
         logger.info(
             'PR#%s got labeled with %s but it is not '
-            'a backport label, ignoring...',
-            number, label_name,
+            'a backport label (it is not prefixed with "%s"), ignoring...',
+            number, label_name, repo_config.backport_label_prefix,
         )
         return
 
-    target_branch = label_name[BACKPORT_LABEL_LEN:]
+    target_branch = label_name[len(repo_config.backport_label_prefix):]
     merge_commit_sha = pull_request['merge_commit_sha']
 
     logger.info(
@@ -224,6 +234,7 @@ async def on_label_added_to_merged_pr(
         pull_request['head']['sha'],
         merge_commit_sha,
         target_branch,
+        repo_config.backport_branch_prefix,
         repository['pulls_url'],
         repository['full_name'],
         repository['clone_url'],
@@ -238,6 +249,7 @@ async def process_pr_backport_labels(
         pr_head_sha,
         pr_merge_commit,
         target_branch,
+        backport_branch_prefix,
         pr_api_url, repo_slug,
         git_url,
 ) -> None:
@@ -295,6 +307,7 @@ async def process_pr_backport_labels(
             pr_number,
             pr_merge_commit,
             target_branch,
+            backport_branch_prefix,
             repo_slug,
             git_url,
             (await RUNTIME_CONTEXT.app_installation.get_token()).token,
