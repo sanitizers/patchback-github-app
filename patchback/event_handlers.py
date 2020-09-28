@@ -22,6 +22,49 @@ logger = logging.getLogger(__name__)
 spawn_proc = lambda *cmd: check_call(cmd, env={})
 
 
+MANUAL_BACKPORT_GUIDE_MD_TMPL = """
+
+Backporting merged PR #{pr_number} into {pr_base_ref}
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. Ensure you have a local repo clone of your fork. Unless you cloned it
+   from the upstream, this would be your `origin` remote.
+2. Make sure you have an upstream repo added as a remote too. In these
+   instructions you'll refer to it by the name `upstream`. If you don't
+   have it, here's how you can add it:
+   ```console
+   $ git add remote upstream {git_url}
+   ```
+3. Ensure you have the latest copy of upstream and prepare a branch
+   that will hold the backported code:
+   ```console
+   $ git fetch upstream
+   $ git checkout -b {backport_pr_branch} upstream/{target_branch}
+   ```
+4. Now, cherry-pick PR #{pr_number} contents into that branch:
+   ```console
+   $ git cherry-pick -x {pr_merge_commit}
+   ```
+   If it'll yell at you with something like `fatal: Commit {pr_merge_commit} is
+   a merge but no -m option was given.`, add `-m 1` as follows intead:
+   ```console
+   $ git cherry-pick -m1 -x {pr_merge_commit}
+   ```
+5. At this point, you'll probably encounter some merge conflicts. You must
+   resolve them in to preserve the patch from PR #{pr_number} as close to the
+   original as possible.
+6. Push this branch to your fork on GitHub:
+   ```console
+   $ git push origin {backport_pr_branch}
+   ```
+7. Create a PR, ensure that the CI is green. If it's not — update it so that
+   the tests and any other checks pass. This is it!
+   Now relax and wait for the maintainers to process your pull request
+   when they have some cycles to do reviews. Don't worry — they'll tell you if
+   any improvements are necessary when the time comes!
+"""
+
+
 def ensure_pr_merged(event_handler):
     async def event_handler_wrapper(*, number, pull_request, **kwargs):
         if not pull_request['merged']:
@@ -38,7 +81,7 @@ def ensure_pr_merged(event_handler):
 
 def backport_pr_sync(
         pr_number: int, merge_commit_sha: str, target_branch: str,
-        backport_branch_prefix: str,
+        backport_pr_branch: str,
         repo_slug: str, repo_remote: str, installation_access_token: str,
 ) -> None:
     """Returns a branch with backported PR pushed to GitHub.
@@ -48,10 +91,6 @@ def backport_pr_sync(
     ``merge_commit_sha`` onto a new branch based on the
     ``target_branch`` and pushes it back to ``repo_remote``.
     """
-    backport_pr_branch = (
-        f'{backport_branch_prefix}{target_branch}/'
-        f'{merge_commit_sha}/pr-{pr_number}'
-    )
     repo_remote_w_creds = repo_remote.replace(
         # NOTE: this is a hack for auth to work
         'https://github.com/',
@@ -139,8 +178,6 @@ def backport_pr_sync(
             ) from proc_err
         else:
             logger.info('Push to GitHub succeeded...')
-
-    return backport_pr_branch
 
 
 @process_event_actions('pull_request', {'closed'})
@@ -304,13 +341,18 @@ async def process_pr_backport_labels(
             },
         )
 
+    backport_pr_branch = (
+        f'{backport_branch_prefix}{target_branch}/'
+        f'{pr_merge_commit}/pr-{pr_number}'
+    )
+    manual_backport_guide = MANUAL_BACKPORT_GUIDE_MD_TMPL.format_map(locals())
     try:
-        backport_pr_branch = await run_in_thread(
+        await run_in_thread(
             backport_pr_sync,
             pr_number,
             pr_merge_commit,
             target_branch,
-            backport_branch_prefix,
+            backport_pr_branch,
             repo_slug,
             git_url,
             (await RUNTIME_CONTEXT.app_installation.get_token()).token,
@@ -359,7 +401,7 @@ async def process_pr_backport_labels(
                 'output': {
                     'title': f'{check_run_name}: cherry-picking failed '
                     '— conflicts found',
-                    'text': f'',
+                    'text': manual_backport_guide,
                     'summary': str(val_err),
                 },
             },
@@ -385,7 +427,7 @@ async def process_pr_backport_labels(
                 'output': {
                     'title': f'{check_run_name}: cherry-picking failed '
                     '— could not push',
-                    'text': f'',
+                    'text': manual_backport_guide,
                     'summary': str(perm_err),
                 },
             },
@@ -443,7 +485,7 @@ async def process_pr_backport_labels(
                 'output': {
                     'title': f'{check_run_name}: creation of the '
                     'backport PR failed',
-                    'text': '',
+                    'text': manual_backport_guide,
                     'summary': f'Backport PR branch: `{backport_pr_branch}\n\n'
                     f'{val_err!s}',
                 },
@@ -475,7 +517,7 @@ async def process_pr_backport_labels(
                 'output': {
                     'title': f'{check_run_name}: creation of the '
                     'backport PR failed',
-                    'text': '',
+                    'text': manual_backport_guide,
                     'summary': f'Backport PR branch: `{backport_pr_branch}\n\n'
                     f'{bad_req_err!s}',
                 },
