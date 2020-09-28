@@ -218,7 +218,10 @@ async def on_label_added_to_merged_pr(
         )
         return
 
-    target_branch = label_name[len(repo_config.backport_label_prefix):]
+    target_branch = (
+        f'{repo_config.target_branch_prefix}'
+        f'{label_name[len(repo_config.backport_label_prefix):]}'
+    )
     merge_commit_sha = pull_request['merge_commit_sha']
 
     logger.info(
