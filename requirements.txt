@@ -134,9 +134,9 @@ multidict==4.7.6 \
     --hash=sha256:fcfbb44c59af3f8ea984de67ec7c306f618a3ec771c2843804069917a8f2e255 \
     --hash=sha256:feed85993dbdb1dbc29102f50bca65bdc68f2c0c8d352468c25b54874f23c39d \
     # via aiohttp, yarl
-octomachinery==0.3.3 \
-    --hash=sha256:b4fdfb738a272cae274fd7763ff84d1ec0d7abbfb166a52457209b54401d94be \
-    --hash=sha256:9a9e8ee105968961cd23198e8d99e4f24abcca194c9560d2cb15568e155d42f4 \
+octomachinery==0.3.4 \
+    --hash=sha256:9b9f7affeff16249895ba08b70d775ba72edf42d16f0eef79896b6f2dc5b261b \
+    --hash=sha256:91f29d7b4eadc4b540750a8f1971545a5fdab604fc33540e7c5f7b7dda8f9098 \
     # via -r requirements.in
 pycparser==2.20 \
     --hash=sha256:2d475327684562c3a96cc71adf7dc8c4f0565175cf86b6d7a404ff4c771f15f0 \
