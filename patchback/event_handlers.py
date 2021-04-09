@@ -22,6 +22,19 @@ logger = logging.getLogger(__name__)
 spawn_proc = lambda *cmd: check_call(cmd, env={})
 
 
+CMD_RUN_OUT_TMPL = """
+$ {cmd!s}
+
+[RETURN CODE]: {cmd_rc!d}
+
+[OUTPUT]:
+{cmd_out!s}
+
+[STDERR]:
+{cmd_err!s}
+"""
+
+
 MANUAL_BACKPORT_GUIDE_MD_TMPL = """
 
 Backporting merged PR #{pr_number} into {pr_base_ref}
@@ -91,6 +104,13 @@ def backport_pr_sync(
     ``merge_commit_sha`` onto a new branch based on the
     ``target_branch`` and pushes it back to ``repo_remote``.
     """
+    def sanitize_token_in_str(inp):
+        nonlocal installation_access_token
+        token_mask = '*' * len(installation_access_token)
+        return inp.replace(
+            installation_access_token, token_mask,
+        )
+
     repo_remote_w_creds = repo_remote.replace(
         # NOTE: this is a hack for auth to work
         'https://github.com/',
@@ -171,10 +191,23 @@ def backport_pr_sync(
                 'origin', 'HEAD',
             )
         except CalledProcessError as proc_err:
+            logger.error(sanitize_token_in_str(str(proc_err)))
+
+            cmd_log = CMD_RUN_OUT_TMPL.format(
+                cmd=sanitize_token_in_str(proc_err.cmd),
+                cmd_out=sanitize_token_in_str(proc_err.stdout.replace),
+                cmd_err=sanitize_token_in_str(proc_err.stderr.replace),
+                cmd_rc=proc_err.returncode,
+            )
+
             raise PermissionError(
                 'Current GitHub App installation does not grant sufficient '
-                f'privileges for pushing to {repo_remote}. `Contents: '
-                'write` permission is necessary to fix this.',
+                f'privileges for pushing to {repo_remote}. Lacking '
+                '`Contents: write` permission is known to cause this.\n\n'
+                'the underlying command output was:\n\n'
+                '```console\n'
+                f'{cmd_log}\n'
+                '```',
             ) from proc_err
         else:
             logger.info('Push to GitHub succeeded...')
