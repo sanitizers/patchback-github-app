@@ -9,7 +9,7 @@ class PullRequestReporter:
         self._checks_api = checks_api
         self._use_checks_api = False
 
-    async def start_reporting(self, pr_number, pr_merge_commit):
+    async def start_reporting(self, pr_head_sha, pr_number, pr_merge_commit):
         try:
             await self._checks_api.create_check(pr_head_sha)
         except PermissionError as perm_err:
