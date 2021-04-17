@@ -16,6 +16,7 @@ from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 
 from .checks_api import ChecksAPI
 from .config import get_patchback_config
+from .github_reporter import PullRequestReporter
 
 
 logger = logging.getLogger(__name__)
@@ -328,29 +329,12 @@ async def process_pr_backport_labels(
         git_url,
 ) -> None:
     gh_api = RUNTIME_CONTEXT.app_installation_client
-    check_runs_base_uri = f'/repos/{repo_slug}/check-runs'
-    check_run_name = f'Backport to {target_branch}'
-    use_checks_api = False
     checks_api = ChecksAPI(
         api=gh_api, repo_slug=repo_slug, branch_name=target_branch,
     )
+    pr_reporter = PullRequestReporter(checks_api=checks_api)
 
-    try:
-        await checks_api.create_check(pr_head_sha)
-    except PermissionError as perm_err:
-        logger.info(
-            'Failed to report PR #%d (commit `%s`) backport status '
-            'updates via Checks API because '
-            'of insufficient GitHub App Installation privileges to '
-            'create pull requests: %s',
-            pr_number, pr_merge_commit, perm_err,
-        )
-    else:
-        use_checks_api = True
-        logger.info('Checks API is available')
-
-    if use_checks_api:
-        await checks_api.update_check()
+    await pr_reporter.start_reporting(pr_head_sha, pr_number, pr_merge_commit)
 
     backport_pr_branch = (
         f'{backport_branch_prefix}{target_branch}/'
@@ -374,17 +358,10 @@ async def process_pr_backport_labels(
             'because the target branch does not exist',
             pr_number, pr_merge_commit, target_branch,
         )
-        if not use_checks_api:
-            return
 
-        await checks_api.update_check(
-            status='completed', conclusion='neutral',
-            output={
-                'title': f'{checks_api.check_run_name}: '
-                'cherry-picking failed — target branch does not exist',
-                'text': f'',
-                'summary': str(lu_err),
-            },
+        await pr_reporter.finish_reporting(
+            subtitle='cherry-picking failed — target branch does not exist',
+            summary=str(lu_err),
         )
         return
     except ValueError as val_err:
@@ -393,17 +370,11 @@ async def process_pr_backport_labels(
             'it conflicts with the target backport branch contents',
             pr_number, pr_merge_commit, target_branch,
         )
-        if not use_checks_api:
-            return
 
-        await checks_api.update_check(
-            status='completed', conclusion='neutral',
-            output={
-                'title': f'{checks_api.check_run_name}: '
-                'cherry-picking failed — conflicts found',
-                'text': manual_backport_guide,
-                'summary': str(val_err),
-            },
+        await pr_reporter.finish_reporting(
+            subtitle='cherry-picking failed — conflicts found',
+            text=manual_backport_guide,
+            summary=str(val_err),
         )
         return
     except PermissionError as perm_err:
@@ -413,31 +384,22 @@ async def process_pr_backport_labels(
             'modify the repo contents',
             pr_number, pr_merge_commit, target_branch,
         )
-        if not use_checks_api:
-            return
 
-        await checks_api.update_check(
-            status='completed', conclusion='neutral',
-            output={
-                'title': f'{checks_api.check_run_name}: '
-                'cherry-picking failed — could not push',
-                'text': manual_backport_guide,
-                'summary': str(perm_err),
-            },
+        await pr_reporter.finish_reporting(
+            subtitle='cherry-picking failed — could not push',
+            text=manual_backport_guide,
+            summary=str(perm_err),
         )
         return
     else:
         logger.info('Backport PR branch: `%s`', backport_pr_branch)
 
-    if use_checks_api:
-        await checks_api.update_check(
-            status='in_progress',
-            output={
-                'title': f'{checks_api.check_run_name}: cherry-pick succeeded',
-                'text': 'PR branch created, proceeding with making a PR.',
-                'summary': f'Backport PR branch: `{backport_pr_branch}',
-            },
-        )
+    backport_pr_branch_msg = f'Backport PR branch: `{backport_pr_branch}`'
+    await pr_reporter.update_progress(
+        subtitle='cherry-pick succeeded',
+        text='PR branch created, proceeding with making a PR.',
+        summary=backport_pr_branch_msg,
+    )
 
     logger.info('Creating a backport PR...')
     try:
@@ -460,18 +422,11 @@ async def process_pr_backport_labels(
             'Failed to backport PR #%d (commit `%s`) to `%s`: %s',
             pr_number, pr_merge_commit, target_branch, val_err,
         )
-        if not use_checks_api:
-            return
 
-        await checks_api.update_check(
-            status='completed', conclusion='neutral',
-            output={
-                'title': f'{checks_api.check_run_name}: '
-                'creation of the backport PR failed',
-                'text': manual_backport_guide,
-                'summary': f'Backport PR branch: `{backport_pr_branch}\n\n'
-                f'{val_err!s}',
-            },
+        await pr_reporter.finish_reporting(
+            subtitle='creation of the backport PR failed',
+            text=manual_backport_guide,
+            summary=f'{backport_pr_branch_msg}\n\n{val_err!s}',
         )
         return
     except BadRequest as bad_req_err:
@@ -486,29 +441,19 @@ async def process_pr_backport_labels(
             'create pull requests',
             pr_number, pr_merge_commit, target_branch,
         )
-        if not use_checks_api:
-            return
 
-        await checks_api.update_check(
-            status='completed', conclusion='neutral',
-            output={
-                'title': f'{checks_api.check_run_name}: '
-                'creation of the backport PR failed',
-                'text': manual_backport_guide,
-                'summary': 'Backport PR branch: '
-                f'`{backport_pr_branch}`\n\n{bad_req_err!s}',
-            },
+        await pr_reporter.finish_reporting(
+            subtitle='creation of the backport PR failed',
+            text=manual_backport_guide,
+            summary=f'{backport_pr_branch_msg}\n\n{bad_req_err!s}',
         )
         return
     else:
         logger.info('Created a PR @ %s', pr_resp['html_url'])
 
-    if use_checks_api:
-        await checks_api.update_check(
-            status='completed', conclusion='success',
-            output={
-                'title': f'{checks_api.check_run_name}: backport PR created',
-                'text': f'Backported as {pr_resp["html_url"]}',
-                'summary': f'Backport PR branch: `{backport_pr_branch}`',
-            },
-        )
+    await pr_reporter.finish_reporting(
+        conclusion='success',
+        subtitle='backport PR created',
+        text=f'Backported as {pr_resp["html_url"]}',
+        summary=backport_pr_branch_msg,
+    )
