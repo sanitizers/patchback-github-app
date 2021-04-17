@@ -368,8 +368,8 @@ async def process_pr_backport_labels(
         )
 
         await pr_reporter.finish_reporting(
-            subtitle='cherry-picking failed — target branch does not exist',
-            summary=str(lu_err),
+            subtitle='💔 cherry-picking failed — target branch does not exist',
+            summary=f'❌ {lu_err!s}',
         )
         return
     except ValueError as val_err:
@@ -380,9 +380,9 @@ async def process_pr_backport_labels(
         )
 
         await pr_reporter.finish_reporting(
-            subtitle='cherry-picking failed — conflicts found',
+            subtitle='💔 cherry-picking failed — conflicts found',
             text=manual_backport_guide,
-            summary=str(val_err),
+            summary=f'❌ {val_err!s}',
         )
         return
     except PermissionError as perm_err:
@@ -394,9 +394,9 @@ async def process_pr_backport_labels(
         )
 
         await pr_reporter.finish_reporting(
-            subtitle='cherry-picking failed — could not push',
+            subtitle='💔 cherry-picking failed — could not push',
             text=manual_backport_guide,
-            summary=str(perm_err),
+            summary=f'❌ {perm_err!s}',
         )
         return
     else:
@@ -432,9 +432,9 @@ async def process_pr_backport_labels(
         )
 
         await pr_reporter.finish_reporting(
-            subtitle='creation of the backport PR failed',
+            subtitle='💔 creation of the backport PR failed',
             text=manual_backport_guide,
-            summary=f'{backport_pr_branch_msg}\n\n{val_err!s}',
+            summary=f'❌ {backport_pr_branch_msg}\n\n{val_err!s}',
         )
         return
     except BadRequest as bad_req_err:
@@ -451,9 +451,9 @@ async def process_pr_backport_labels(
         )
 
         await pr_reporter.finish_reporting(
-            subtitle='creation of the backport PR failed',
+            subtitle='💔 creation of the backport PR failed',
             text=manual_backport_guide,
-            summary=f'{backport_pr_branch_msg}\n\n{bad_req_err!s}',
+            summary=f'❌ {backport_pr_branch_msg}\n\n{bad_req_err!s}',
         )
         return
     else:
@@ -461,7 +461,7 @@ async def process_pr_backport_labels(
 
     await pr_reporter.finish_reporting(
         conclusion='success',
-        subtitle='backport PR created',
+        subtitle='💚 backport PR created',
         text=f'Backported as {pr_resp["html_url"]}',
-        summary=backport_pr_branch_msg,
+        summary=f'✅ {backport_pr_branch_msg!s}',
     )
