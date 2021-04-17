@@ -55,7 +55,7 @@ class PullRequestReporter:
         )
 
     def _make_output_from_details(self, subtitle, text, summary):
-        title = checks_api.check_run_name
+        title = self._checks_api.check_run_name
         if subtitle:
             title = f'{title}: {subtitle!s}'
         return {
