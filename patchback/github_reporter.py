@@ -37,7 +37,7 @@ If you think I'm experiencing problems, ping `@webknjaz` — my creator.
 
 PROGRESS_COMMENT = f"""
 {{title!s}}
-{{'^' * len(title)}}
+{{title_underline!s}}
 
 {{summary}}
 
@@ -123,8 +123,12 @@ class PullRequestReporter:
             'summary': summary or '',
         }
 
+        title_underline = '^' * len(title)
         await self._comments_api.update_comment(
-            PROGRESS_COMMENT.format_map(checks_output),
+            PROGRESS_COMMENT.format(
+                title_underline=title_underline,
+                **checks_output,
+            ),
         )
 
         return checks_output
