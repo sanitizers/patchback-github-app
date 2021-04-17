@@ -40,8 +40,7 @@ $ {cmd!s}
 
 MANUAL_BACKPORT_GUIDE_MD_TMPL = """
 
-Backporting merged PR #{pr_number} into {pr_base_ref}
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+### Backporting merged PR #{pr_number} into {pr_base_ref}
 
 1. Ensure you have a local repo clone of your fork. Unless you cloned it
    from the upstream, this would be your `origin` remote.

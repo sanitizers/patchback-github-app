@@ -36,8 +36,7 @@ If you think I'm experiencing problems, ping `@webknjaz` — my creator.
 
 
 PROGRESS_COMMENT = f"""
-{{title!s}}
-{{'^' * len(title)}}
+### {{title!s}}
 
 {{summary}}
 
