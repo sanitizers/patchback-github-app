@@ -15,6 +15,7 @@ from octomachinery.app.routing.decorators import process_webhook_payload
 from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 
 from .checks_api import ChecksAPI
+from .comments_api import CommentsAPI
 from .config import get_patchback_config
 from .github_reporter import PullRequestReporter
 
@@ -332,7 +333,14 @@ async def process_pr_backport_labels(
     checks_api = ChecksAPI(
         api=gh_api, repo_slug=repo_slug, branch_name=target_branch,
     )
-    pr_reporter = PullRequestReporter(checks_api=checks_api)
+    comments_api = CommentsAPI(
+        api=gh_api, repo_slug=repo_slug, pr_number=pr_number,
+    )
+    pr_reporter = PullRequestReporter(
+        checks_api=checks_api,
+        comments_api=comments_api,
+        branch_name=target_branch,
+    )
 
     await pr_reporter.start_reporting(pr_head_sha, pr_number, pr_merge_commit)
 

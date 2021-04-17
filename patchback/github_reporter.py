@@ -4,12 +4,62 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
+COMMENT_SIGNATURE = """
+<sub><sup>
+--
+🤖 @patchback
+I'm built with [octomachinery](https://octomachinery.dev) and
+my source is open — https://github.com/sanitizers/patchback-github-app.
+</sup></sub>
+"""
+
+
+PROCESS_START_COMMENT = f"""
+Beep beep boop!
+🤖 Hi, I'm @patchback — your friendly neighborhood robot!
+
+Somebody's just asked me to create a backport of this pull request
+into the `{{branch_name}}` branch. So in this comment I report that
+I'm on it!
+
+*Please, expect to see further updates regarding my progress in updates
+to this comment. Stay tuned!*
+
+![@patchback 🤖](
+https://cdn-images-1.medium.com/max/1600/1*o9B5BFh3haqBHLSfwUf_oA.gif)
+
+If you think I'm experiencing problems, ping `@webknjaz` — my creator.
+
+
+{COMMENT_SIGNATURE}
+"""
+
+
+PROGRESS_COMMENT = f"""
+{{title!s}}
+{{'^' * len(title)}}
+
+{{summary}}
+
+{{text}}
+
+
+{COMMENT_SIGNATURE}
+"""
+
+
 class PullRequestReporter:
-    def __init__(self, checks_api):
+    def __init__(self, *, checks_api, comments_api, branch_name):
+        self._branch_name = branch_name
         self._checks_api = checks_api
+        self._comments_api = comments_api
         self._use_checks_api = False
 
     async def start_reporting(self, pr_head_sha, pr_number, pr_merge_commit):
+        await self._comments_api.create_comment(
+            PROCESS_START_COMMENT.format(branch_name=self._branch_name),
+        )
+
         try:
             await self._checks_api.create_check(pr_head_sha)
         except PermissionError as perm_err:
@@ -31,12 +81,16 @@ class PullRequestReporter:
             *,
             subtitle, text, summary,
     ):
+        checks_output = self._make_comment_from_details(
+            subtitle, text, summary,
+        )
+
         if not self._use_checks_api:
             return
 
         await self._checks_api.update_check(
             status='in_progress',
-            output=self._make_output_from_details(subtitle, text, summary),
+            output=checks_output,
         )
 
     async def finish_reporting(
@@ -45,21 +99,32 @@ class PullRequestReporter:
             subtitle=None, text=None, summary=None,
             conclusion='neutral',
     ):
+        checks_output = self._make_comment_from_details(
+            subtitle, text, summary,
+        )
+
         if not self._use_checks_api:
             return
 
         await self._checks_api.update_check(
             status='completed',
             conclusion=conclusion,
-            output=self._make_output_from_details(subtitle, text, summary),
+            output=checks_output,
         )
 
-    def _make_output_from_details(self, subtitle, text, summary):
+    def _make_comment_from_details(self, subtitle, text, summary):
         title = self._checks_api.check_run_name
         if subtitle:
             title = f'{title}: {subtitle!s}'
-        return {
+
+        checks_output = {
             'title': title,
             'text': text or '',
             'summary': summary or '',
         }
+
+        await self._comments_api.update_comment(
+            PROGRESS_COMMENT.format_map(checks_output),
+        )
+
+        return checks_output
