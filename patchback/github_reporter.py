@@ -81,7 +81,7 @@ class PullRequestReporter:
             *,
             subtitle, text, summary,
     ):
-        checks_output = self._make_comment_from_details(
+        checks_output = await self._make_comment_from_details(
             subtitle, text, summary,
         )
 
@@ -99,7 +99,7 @@ class PullRequestReporter:
             subtitle=None, text=None, summary=None,
             conclusion='neutral',
     ):
-        checks_output = self._make_comment_from_details(
+        checks_output = await self._make_comment_from_details(
             subtitle, text, summary,
         )
 
@@ -112,7 +112,7 @@ class PullRequestReporter:
             output=checks_output,
         )
 
-    def _make_comment_from_details(self, subtitle, text, summary):
+    async def _make_comment_from_details(self, subtitle, text, summary):
         title = self._checks_api.check_run_name
         if subtitle:
             title = f'{title}: {subtitle!s}'
