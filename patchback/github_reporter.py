@@ -25,9 +25,6 @@ I'm on it!
 *Please, expect to see further updates regarding my progress in updates
 to this comment. Stay tuned!*
 
-![@patchback 🤖](
-https://cdn-images-1.medium.com/max/1600/1*o9B5BFh3haqBHLSfwUf_oA.gif)
-
 If you think I'm experiencing problems, ping `@webknjaz` — my creator.
 
 
