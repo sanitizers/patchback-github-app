@@ -48,7 +48,7 @@ MANUAL_BACKPORT_GUIDE_MD_TMPL = """
    instructions you'll refer to it by the name `upstream`. If you don't
    have it, here's how you can add it:
    ```console
-   $ git add remote upstream {git_url}
+   $ git remote add upstream {git_url}
    ```
 3. Ensure you have the latest copy of upstream and prepare a branch
    that will hold the backported code:
