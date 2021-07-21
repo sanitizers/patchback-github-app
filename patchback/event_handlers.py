@@ -205,7 +205,8 @@ def backport_pr_sync(
             raise PermissionError(
                 'Current GitHub App installation does not grant sufficient '
                 f'privileges for pushing to {repo_remote}. Lacking '
-                '`Contents: write` permission is known to cause this.\n\n'
+                '`Contents: write` or `Workflows: write` permissions '
+                'are known to cause this.\n\n'
                 'the underlying command output was:\n\n'
                 '```console\n'
                 f'{cmd_log}\n'
