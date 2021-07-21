@@ -196,9 +196,9 @@ def backport_pr_sync(
             logger.error(sanitize_token_in_str(str(proc_err)))
 
             cmd_log = CMD_RUN_OUT_TMPL.format(
-                cmd=sanitize_token_in_str(proc_err.cmd),
-                cmd_out=sanitize_token_in_str(proc_err.stdout.replace),
-                cmd_err=sanitize_token_in_str(proc_err.stderr.replace),
+                cmd=sanitize_token_in_str(' '.join(proc_err.cmd)),
+                cmd_out=sanitize_token_in_str(proc_err.stdout),
+                cmd_err=sanitize_token_in_str(proc_err.stderr),
                 cmd_rc=proc_err.returncode,
             )
 
