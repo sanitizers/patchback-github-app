@@ -28,7 +28,7 @@ spawn_proc = lambda *cmd: check_call(cmd, env={})
 CMD_RUN_OUT_TMPL = """
 $ {cmd!s}
 
-[RETURN CODE]: {cmd_rc!d}
+[RETURN CODE]: {cmd_rc:d}
 
 [OUTPUT]:
 {cmd_out!s}
