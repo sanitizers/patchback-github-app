@@ -120,7 +120,8 @@ def backport_pr_sync(
         1,  # count
     )
     with tempfile.TemporaryDirectory(
-            prefix=f'{repo_slug.replace("/", "--")}---{target_branch}---',
+            prefix=f'{repo_slug.replace("/", "--")}---'
+            f'{target_branch.replace("/", "--")}---',
             suffix=f'---PR-{pr_number}.git',
     ) as tmp_dir:
         logger.info('Created a temporary dir: `%s`', tmp_dir)
