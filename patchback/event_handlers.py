@@ -25,6 +25,16 @@ logger = logging.getLogger(__name__)
 spawn_proc = lambda *cmd: check_call(cmd, env={})
 
 
+# Refs:
+# * https://github.community/t/github-actions-bot-email-address/17204/6
+# * https://github.com/actions/checkout/issues/13#issuecomment-724415212
+# * https://api.github.com/users/patchback%5Bbot%5D
+# TODO: Figure out how to generate this automatically, on startup.
+BOT_USER_GH_ID = 45432694
+GIT_USERNAME = 'patchback[bot]'
+GIT_EMAIL = f'{BOT_USER_GH_ID:d}+{GIT_USERNAME!s}@users.noreply.github.com'
+
+
 CMD_RUN_OUT_TMPL = """
 $ {cmd!s}
 
@@ -130,8 +140,8 @@ def backport_pr_sync(
             'git',
             '--git-dir', str(pathlib.Path(tmp_dir) / '.git'),
             '--work-tree', tmp_dir,
-            '-c', 'user.email=patchback@sanitizers.bot',
-            '-c', 'user.name=Patchback',
+            '-c', f'user.email={GIT_EMAIL}',
+            '-c', f'user.name={GIT_USERNAME}',
             # '-c', 'protocol.version=2',  # Needs Git 2.18+
         )
         spawn_proc(*git_cmd, 'remote', 'add', 'origin', repo_remote_w_creds)
