@@ -1,4 +1,4 @@
-export GIT_TAGS=$(git ls-remote --tags git://github.com/sanitizers/patchback-github-app.git | grep -v '\^{}$' | grep -E "^${SOURCE_VERSION}")
+export GIT_TAGS=$(git ls-remote --tags https://github.com/sanitizers/patchback-github-app.git | grep -v '\^{}$' | grep -E "^${SOURCE_VERSION}")
 export LAST_TAG_VERSION=$(echo "${GIT_TAGS}" | awk '{print$2}' | sed 's#^refs/tags/##;s#^v##' | grep -v '[abcepr]' | tail -n1)
 export LAST_TAG_VERSION="${LAST_TAG_VERSION:-0.1}"
 
