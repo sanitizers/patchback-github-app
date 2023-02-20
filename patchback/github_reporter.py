@@ -45,13 +45,15 @@ PROGRESS_COMMENT = f"""
 
 
 class PullRequestReporter:
-    def __init__(self, *, checks_api, comments_api, branch_name):
+    def __init__(self, *, checks_api, comments_api, locking_api, branch_name):
         self._branch_name = branch_name
         self._checks_api = checks_api
         self._comments_api = comments_api
+        self._locking_api = locking_api
         self._use_checks_api = False
 
     async def start_reporting(self, pr_head_sha, pr_number, pr_merge_commit):
+        await self._locking_api.unlock_pr()
         await self._comments_api.create_comment(
             PROCESS_START_COMMENT.format(branch_name=self._branch_name),
         )
@@ -98,6 +100,7 @@ class PullRequestReporter:
         checks_output = await self._make_comment_from_details(
             subtitle, text, summary,
         )
+        await self._locking_api.lock_pr()
 
         if not self._use_checks_api:
             return

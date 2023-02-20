@@ -15,6 +15,7 @@ from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 
 from .checks_api import ChecksAPI
 from .comments_api import CommentsAPI
+from .locking_api import LockingAPI
 from .config import get_patchback_config
 from .github_reporter import PullRequestReporter
 
@@ -271,6 +272,8 @@ async def on_merge_of_labeled_pr(
             number,
             pull_request['title'],
             pull_request['body'],
+            pull_request['locked'],
+            pull_request['active_lock_reason'],
             pull_request['base']['ref'],
             pull_request['head']['sha'],
             merge_commit_sha,
@@ -319,6 +322,8 @@ async def on_label_added_to_merged_pr(
         number,
         pull_request['title'],
         pull_request['body'],
+        pull_request['locked'],
+        pull_request['active_lock_reason'],
         pull_request['base']['ref'],
         pull_request['head']['sha'],
         merge_commit_sha,
@@ -334,6 +339,8 @@ async def process_pr_backport_labels(
         pr_number,
         pr_title,
         pr_body,
+        pr_is_locked,
+        pr_lock_reason,
         pr_base_ref,
         pr_head_sha,
         pr_merge_commit,
@@ -349,9 +356,14 @@ async def process_pr_backport_labels(
     comments_api = CommentsAPI(
         api=gh_api, repo_slug=repo_slug, pr_number=pr_number,
     )
+    locking_api = LockingAPI(
+        api=gh_api, repo_slug=repo_slug, pr_number=pr_number,
+        is_locked=pr_is_locked, lock_reason=pr_lock_reason,
+    )
     pr_reporter = PullRequestReporter(
         checks_api=checks_api,
         comments_api=comments_api,
+        locking_api=locking_api,
         branch_name=target_branch,
     )
 
