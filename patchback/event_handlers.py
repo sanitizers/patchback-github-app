@@ -141,6 +141,7 @@ def backport_pr_sync(
             '--work-tree', tmp_dir,
             '-c', f'user.email={GIT_EMAIL}',
             '-c', f'user.name={GIT_USERNAME}',
+            '-c', 'diff.algorithm=histogram',
             # '-c', 'protocol.version=2',  # Needs Git 2.18+
         )
         spawn_proc(*git_cmd, 'remote', 'add', 'origin', repo_remote_w_creds)
@@ -183,6 +184,7 @@ def backport_pr_sync(
         try:
             spawn_proc(
                 *git_cmd, 'cherry-pick', '-x',
+                '--strategy-option=diff-algorithm=histogram',
                 *(('--mainline', '1') if is_merge_commit else ()),
                 merge_commit_sha,
             )
