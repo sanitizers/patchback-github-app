@@ -70,7 +70,7 @@ MANUAL_BACKPORT_GUIDE_MD_TMPL = """
    $ git cherry-pick -x {pr_merge_commit}
    ```
    If it'll yell at you with something like `fatal: Commit {pr_merge_commit} is
-   a merge but no -m option was given.`, add `-m 1` as follows intead:
+   a merge but no -m option was given.`, add `-m 1` as follows instead:
    ```console
    $ git cherry-pick -m1 -x {pr_merge_commit}
    ```
