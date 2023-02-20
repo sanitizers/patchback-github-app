@@ -185,6 +185,7 @@ def backport_pr_sync(
             spawn_proc(
                 *git_cmd, 'cherry-pick', '-x',
                 '--strategy-option=diff-algorithm=histogram',
+                '--strategy-option=find-renames',
                 *(('--mainline', '1') if is_merge_commit else ()),
                 merge_commit_sha,
             )
