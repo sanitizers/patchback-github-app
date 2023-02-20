@@ -4,7 +4,6 @@ import http
 import logging
 import pathlib
 import tempfile
-from datetime import datetime
 from subprocess import CalledProcessError, check_output, check_call
 
 from anyio import run_in_thread
