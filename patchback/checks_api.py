@@ -1,6 +1,8 @@
 import http
 from datetime import datetime
 
+from gidgethub import BadRequest
+
 
 class ChecksAPI:
     def __init__(self, *, api, repo_slug, branch_name):
