@@ -38,6 +38,17 @@ class PatchbackConfig:
     Set to None to disable adding a label on failure.
     """
 
+    @failed_label_prefix.validator
+    def _v_failed_label_prefix(self, _, value: str | None) -> None:
+        """
+        Ensure backport_label_prefix and failed_label_prefix are different
+        to avoid infinite loops
+        """
+        if value == self.backport_label_prefix:
+            raise ValueError(
+                'failed_label_prefix and backport_label_prefix must be unique values'
+            )
+
 
 async def get_patchback_config(
         *,
