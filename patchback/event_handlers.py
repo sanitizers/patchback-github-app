@@ -1,10 +1,14 @@
 """Webhook event handlers."""
 
+from __future__ import annotations
+
 import http
+import functools
 import logging
 import pathlib
 import tempfile
 from subprocess import CalledProcessError, check_output, check_call
+from typing import Any
 
 from anyio import run_in_thread
 from gidgethub import BadRequest, ValidationError
@@ -18,6 +22,7 @@ from .comments_api import CommentsAPI
 from .locking_api import LockingAPI
 from .config import get_patchback_config
 from .github_reporter import PullRequestReporter
+from .labels_api import IssueLabelsAPI, RepoLabelsAPI
 
 
 logger = logging.getLogger(__name__)
@@ -282,6 +287,9 @@ async def on_merge_of_labeled_pr(
             repository['pulls_url'],
             repository['full_name'],
             repository['clone_url'],
+            repo_config.backport_label_prefix,
+            repo_config.target_branch_prefix,
+            repo_config.failed_label_prefix,
         )
 
 
@@ -332,6 +340,9 @@ async def on_label_added_to_merged_pr(
         repository['pulls_url'],
         repository['full_name'],
         repository['clone_url'],
+        repo_config.backport_label_prefix,
+        repo_config.target_branch_prefix,
+        repo_config.failed_label_prefix,
     )
 
 
@@ -348,6 +359,9 @@ async def process_pr_backport_labels(
         backport_branch_prefix,
         pr_api_url, repo_slug,
         git_url,
+        backport_label_prefix: str,
+        target_branch_prefix: str,
+        failed_label_prefix: str | None,
 ) -> None:
     gh_api = RUNTIME_CONTEXT.app_installation_client
     checks_api = ChecksAPI(
@@ -365,6 +379,17 @@ async def process_pr_backport_labels(
         comments_api=comments_api,
         locking_api=locking_api,
         branch_name=target_branch,
+    )
+    labels_api = RepoLabelsAPI(api=gh_api, repo_slug=repo_slug)
+    issue_labels_api = IssueLabelsAPI(api=gh_api, repo_slug=repo_slug, number=pr_number)
+    failed_label_cb = functools.partial(
+        add_failure_label,
+        labels_api=labels_api,
+        issue_labels_api=issue_labels_api,
+        backport_label_prefix=backport_label_prefix,
+        failed_label_prefix=failed_label_prefix,
+        target_branch_prefix=target_branch_prefix,
+        target_branch=target_branch,
     )
 
     await pr_reporter.start_reporting(pr_head_sha, pr_number, pr_merge_commit)
@@ -396,6 +421,7 @@ async def process_pr_backport_labels(
             subtitle='💔 cherry-picking failed — target branch does not exist',
             summary=f'❌ {lu_err!s}',
         )
+        await failed_label_cb()
         return
     except ValueError as val_err:
         logger.info(
@@ -409,6 +435,7 @@ async def process_pr_backport_labels(
             text=manual_backport_guide,
             summary=f'❌ {val_err!s}',
         )
+        await failed_label_cb()
         return
     except PermissionError as perm_err:
         logger.info(
@@ -423,6 +450,7 @@ async def process_pr_backport_labels(
             text=manual_backport_guide,
             summary=f'❌ {perm_err!s}',
         )
+        await failed_label_cb()
         return
     else:
         logger.info('Backport PR branch: `%s`', backport_pr_branch)
@@ -461,6 +489,7 @@ async def process_pr_backport_labels(
             text=manual_backport_guide,
             summary=f'❌ {backport_pr_branch_msg}\n\n{val_err!s}',
         )
+        await failed_label_cb()
         return
     except BadRequest as bad_req_err:
         if (
@@ -480,6 +509,7 @@ async def process_pr_backport_labels(
             text=manual_backport_guide,
             summary=f'❌ {backport_pr_branch_msg}\n\n{bad_req_err!s}',
         )
+        await failed_label_cb()
         return
     else:
         logger.info('Created a PR @ %s', pr_resp['html_url'])
@@ -490,3 +520,31 @@ async def process_pr_backport_labels(
         text=f'Backported as {pr_resp["html_url"]}',
         summary=f'✅ {backport_pr_branch_msg!s}',
     )
+
+async def add_failure_label(
+    *,
+    labels_api: RepoLabelsAPI,
+    issue_labels_api: IssueLabelsAPI,
+    backport_label_prefix: str,
+    failed_label_prefix: str | None,
+    target_branch_prefix: str,
+    target_branch: str,
+) -> dict[str, Any] | None:
+    if failed_label_prefix is None:
+        return None
+    stripped_branch = target_branch[len(target_branch_prefix):]
+    label: str = failed_label_prefix + stripped_branch
+    backport_label = backport_label_prefix + stripped_branch
+    # Create label if it doesn't exist
+    try:
+        await labels_api.get_label(label)
+    except BadRequest as exc:
+        if exc.status_code != 404:
+            raise
+        await labels_api.create_label(
+            label, f'Failed to backport PR to {target_branch}.'
+        )
+    # Add failed label
+    await issue_labels_api.add_labels(label)
+    # Delete backport label
+    await issue_labels_api.remove_label(backport_label)
