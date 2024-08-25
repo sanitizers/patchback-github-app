@@ -368,9 +368,9 @@ multidict==6.0.5 \
     # via
     #   aiohttp
     #   yarl
-octomachinery==0.3.8 \
-    --hash=sha256:a675e0995fc35c465386e54ba045a8e569c6ebdbf290246725cdbe99c119bf01 \
-    --hash=sha256:bd81112836ebce6e83c34f1071902a828a0965f559d86a734c7099d1f1e47f5e
+octomachinery==0.3.9 \
+    --hash=sha256:13447c4608e02124245fe8fe6fd21fd5cd57f4ecf197a657de70d189b7291d3e \
+    --hash=sha256:777293bb44c273a8daf26aee71a0423ea506e73b75d88fd4db2f1fc259682c2e
     # via -r requirements.in
 pycparser==2.20 \
     --hash=sha256:2d475327684562c3a96cc71adf7dc8c4f0565175cf86b6d7a404ff4c771f15f0 \
