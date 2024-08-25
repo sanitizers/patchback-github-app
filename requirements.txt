@@ -355,7 +355,7 @@ multidict==6.0.5 \
     # via
     #   aiohttp
     #   yarl
-octomachinery==0.3.4 \
+octomachinery==0.3.8 \
     --hash=sha256:91f29d7b4eadc4b540750a8f1971545a5fdab604fc33540e7c5f7b7dda8f9098 \
     --hash=sha256:9b9f7affeff16249895ba08b70d775ba72edf42d16f0eef79896b6f2dc5b261b
     # via -r requirements.in
