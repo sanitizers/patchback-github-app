@@ -251,9 +251,9 @@ frozenlist==1.4.1 \
     # via
     #   aiohttp
     #   aiosignal
-gidgethub==4.1.1 \
-    --hash=sha256:cfabfa696d422ee91eaf1e3f01ea75e576721233cc3ea8badc7d86c30061df8e \
-    --hash=sha256:fab527a36fd89a27f68686f4c726b2efd989c3d2cac1c46149b1dd46c4e3ab7d
+gidgethub==5.0.0 \
+    --hash=sha256:a4a8d8b1ab629757b557d3bcb98a5a77790a3d00b320f5f881a1754cf0e21086 \
+    --hash=sha256:8aea58a54889e3490804be917d1d5cfec4e81458cd85b34974834f96e5e697d3
     # via octomachinery
 idna==2.10 \
     --hash=sha256:b307872f855b18632ce0c21c5e45be78c0ea7ae4c15c828c20788b26921eb3f6 \
