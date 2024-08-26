@@ -243,7 +243,8 @@ async def on_merge_of_labeled_pr(
     """React to labeled pull request merge."""
     repo_config = await get_patchback_config()
     backport_label_len = len(repo_config.backport_label_prefix)
-    labels = [label['name'] for label in pull_request['labels']]
+    # Sort version numbers highest to lowest
+    labels = sorted((label['name'] for label in pull_request['labels']), reverse=True)
     target_branches = [
         f'{repo_config.target_branch_prefix}{label[backport_label_len:]}'
         for label in labels
