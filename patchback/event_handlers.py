@@ -58,31 +58,35 @@ MANUAL_BACKPORT_GUIDE_MD_TMPL = """
    instructions you'll refer to it by the name `upstream`. If you don't
    have it, here's how you can add it:
    ```console
-   $ git remote add upstream {git_url}
+   git remote add upstream {git_url}
    ```
 3. Ensure you have the latest copy of upstream and prepare a branch
    that will hold the backported code:
    ```console
-   $ git fetch upstream
-   $ git checkout -b {backport_pr_branch} upstream/{target_branch}
+   git fetch upstream
+   git checkout -b {backport_pr_branch} upstream/{target_branch}
    ```
 4. Now, cherry-pick PR #{pr_number} contents into that branch:
    ```console
-   $ git cherry-pick -x {pr_merge_commit}
+   git cherry-pick -x {pr_merge_commit}
    ```
    If it'll yell at you with something like `fatal: Commit {pr_merge_commit} is
    a merge but no -m option was given.`, add `-m 1` as follows instead:
    ```console
-   $ git cherry-pick -m1 -x {pr_merge_commit}
+   git cherry-pick -m1 -x {pr_merge_commit}
    ```
-5. At this point, you'll probably encounter some merge conflicts. You must
-   resolve them in to preserve the patch from PR #{pr_number} as close to the
+5. At this point, you'll encounter some merge conflicts. You must
+   resolve them in order to preserve the patch from PR #{pr_number} as close to the
    original as possible.
-6. Push this branch to your fork on GitHub:
+6. Once conflicts are resolved and `git add`ed, run:
    ```console
-   $ git push origin {backport_pr_branch}
+   git cherry-pick --continue
    ```
-7. Create a PR, ensure that the CI is green. If it's not — update it so that
+7. Push this branch to your fork on GitHub:
+   ```console
+   git push origin {backport_pr_branch}
+   ```
+8. Create a PR, ensure that the CI is green. If it's not — update it so that
    the tests and any other checks pass. This is it!
    Now relax and wait for the maintainers to process your pull request
    when they have some cycles to do reviews. Don't worry — they'll tell you if
