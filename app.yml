@@ -1,6 +1,5 @@
-# This is a GitHub App Manifest. GitHub uses these settings when someone
-# registers a new App from this file, which is how one would run a private
-# instance of Patchback.
+# This is a GitHub App Manifest. It records the privileges Patchback needs in
+# one structured place, and GitHub can register an App from it.
 #
 # NOTE: this file is not synced with the settings of the public Patchback App
 # NOTE: at https://github.com/apps/patchback — those live in the App's own
@@ -10,17 +9,14 @@
 # * https://docs.github.com/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
 # * https://probot.github.io/docs/development/#configuring-a-github-app
 
-# GitHub App names are globally unique and `patchback` is taken by the public
-# instance, so a private one has to pick its own name at registration time:
-# name: patchback-myorg
+name: patchback
 description: >-
   Backports merged pull requests labeled with `backport-<target branch>`
   by cherry-picking them onto that branch and opening a new pull request.
 url: https://github.com/sanitizers/patchback-github-app
 public: true
 
-# The webhook endpoint is deployment-specific, so it is left out here. A
-# private instance would add its own, e.g.:
+# The webhook endpoint belongs to the deployment, so it is not set here:
 # hook_attributes:
 #   url: https://patchback.example.com/
 
@@ -28,14 +24,14 @@ public: true
 # backport label landing on an already merged PR, and a labeled PR being
 # merged.
 default_events:
-  - pull_request
+- pull_request
 
 default_permissions:
   # Mandatory for every GitHub App.
   metadata: read
 
-  # Cloning the repository, cherry-picking and pushing the backport branch,
-  # and reading `.github/patchback.yml`.
+  # Cloning the repository, and cherry-picking and pushing the backport
+  # branch.
   contents: write
 
   # Creating the backport pull request, and commenting on the original one —
@@ -46,6 +42,6 @@ default_permissions:
   # progress comment.
   checks: write
 
-  # The deployed App additionally has `Single file` (`.github/patchback.yml`)
-  # read access, but a manifest cannot declare which file that would be, and
-  # `contents` above already covers reading it.
+  # Reading `.github/patchback.yml`. Which file that is gets configured in
+  # the App's settings, not in the manifest.
+  single_file: read
