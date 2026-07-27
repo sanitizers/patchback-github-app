@@ -1,3 +1,5 @@
+---
+
 # This is a GitHub App Manifest. It records the privileges Patchback needs in
 # one structured place, and GitHub can register an App from it.
 #
@@ -6,8 +8,8 @@
 # NOTE: settings page and have to be changed there.
 #
 # Refs:
-# * https://docs.github.com/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
-# * https://probot.github.io/docs/development/#configuring-a-github-app
+# https://docs.github.com/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
+# https://probot.github.io/docs/development/#configuring-a-github-app
 
 name: patchback
 description: >-
@@ -45,3 +47,5 @@ default_permissions:
   # Reading `.github/patchback.yml`. Which file that is gets configured in
   # the App's settings, not in the manifest.
   single_file: read
+
+...
