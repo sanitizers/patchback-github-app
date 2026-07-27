@@ -435,6 +435,16 @@ async def process_pr_backport_labels(
     )
 
     logger.info('Creating a backport PR...')
+    backport_pr_body = (
+        f'**This is a backport of PR #{pr_number} as '
+        f'merged into {pr_base_ref} '
+        f'({pr_merge_commit}).**'
+    )
+    # NOTE: GitHub sends `null` as the body of pull requests that have no
+    # NOTE: description. Interpolating it unconditionally would render a
+    # NOTE: literal `None` in the backport PR description.
+    if pr_body:
+        backport_pr_body += f'\n\n{pr_body}'
     try:
         pr_resp = await gh_api.post(
             pr_api_url,
@@ -443,9 +453,7 @@ async def process_pr_backport_labels(
                 f'[{target_branch}] {pr_title}',
                 'head': backport_pr_branch,
                 'base': target_branch,
-                'body': f'**This is a backport of PR #{pr_number} as '
-                f'merged into {pr_base_ref} '
-                f'({pr_merge_commit}).**\n\n{pr_body}',
+                'body': backport_pr_body,
                 'maintainer_can_modify': True,
                 'draft': False,
             },
