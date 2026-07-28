@@ -44,6 +44,13 @@ default_permissions:
   # progress comment.
   checks: write
 
+  # Pushing a commit that touches `.github/workflows/` needs this on top of
+  # `contents: write`; without it, backporting any CI change fails at the
+  # push stage — the error `event_handlers.py` raises names both. Keeping
+  # the workflow files in sync across the stable branches is worth it
+  # anyway, so that later backports touching them still apply cleanly.
+  workflows: write
+
   # Reading `.github/patchback.yml`. Which file that is gets configured in
   # the App's settings, not in the manifest.
   single_file: read
