@@ -1,0 +1,58 @@
+---
+
+# This is a GitHub App Manifest. It records the privileges Patchback needs in
+# one structured place, and GitHub can register an App from it.
+#
+# NOTE: this file is not synced with the settings of the public Patchback App
+# NOTE: at https://github.com/apps/patchback — those live in the App's own
+# NOTE: settings page and have to be changed there.
+#
+# Refs:
+# https://docs.github.com/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
+# https://probot.github.io/docs/development/#configuring-a-github-app
+
+name: patchback
+description: >-
+  Backports merged pull requests labeled with `backport-<target branch>`
+  by cherry-picking them onto that branch and opening a new pull request.
+url: https://github.com/sanitizers/patchback-github-app
+public: true
+
+# The webhook endpoint belongs to the deployment, so it is not set here:
+# hook_attributes:
+#   url: https://patchback.example.com/
+
+# Patchback acts on the `labeled` and `closed` actions of this event: a
+# backport label landing on an already merged PR, and a labeled PR being
+# merged.
+default_events:
+- pull_request
+
+default_permissions:
+  # Mandatory for every GitHub App.
+  metadata: read
+
+  # Cloning the repository, and cherry-picking and pushing the backport
+  # branch.
+  contents: write
+
+  # Creating the backport pull request, and commenting on the original one —
+  # including unlocking and re-locking it when it was locked.
+  pull_requests: write
+
+  # Publishing the `Backport to <target branch>` check run that mirrors the
+  # progress comment.
+  checks: write
+
+  # Pushing a commit that touches `.github/workflows/` needs this on top of
+  # `contents: write`; without it, backporting any CI change fails at the
+  # push stage — the error `event_handlers.py` raises names both. Keeping
+  # the workflow files in sync across the stable branches is worth it
+  # anyway, so that later backports touching them still apply cleanly.
+  workflows: write
+
+  # Reading `.github/patchback.yml`. Which file that is gets configured in
+  # the App's settings, not in the manifest.
+  single_file: read
+
+...
