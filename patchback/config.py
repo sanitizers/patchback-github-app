@@ -11,6 +11,7 @@ from octomachinery.app.runtime.installation_utils import (
 DEFAULT_BACKPORT_BRANCH_PREFIX = 'patchback/backports/'
 DEFAULT_BACKPORT_LABEL_PREFIX = 'backport-'
 DEFAULT_TARGET_BRANCH_PREFIX = ''
+DEFAULT_FAILED_BACKPORT_LABEL_PREFIX = 'failed-backport-'
 
 
 @attr.dataclass
@@ -29,6 +30,24 @@ class PatchbackConfig:
         default=DEFAULT_TARGET_BRANCH_PREFIX,
     )
     """Prefix that the older/stable version branch has."""
+
+    failed_label_prefix: str | None = attr.ib(default=DEFAULT_FAILED_BACKPORT_LABEL_PREFIX)
+    """
+    Add {failed_label_prefix}-{target_branch} label when backport fails.
+    {target_branch_prefix} is stripped from {target_branch}.
+    Set to None to disable adding a label on failure.
+    """
+
+    @failed_label_prefix.validator
+    def _v_failed_label_prefix(self, _, value: str | None) -> None:
+        """
+        Ensure backport_label_prefix and failed_label_prefix are different
+        to avoid infinite loops
+        """
+        if value == self.backport_label_prefix:
+            raise ValueError(
+                'failed_label_prefix and backport_label_prefix must be unique values'
+            )
 
 
 async def get_patchback_config(
