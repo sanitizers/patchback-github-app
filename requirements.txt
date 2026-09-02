@@ -402,9 +402,9 @@ gidgethub==5.3.0 \
     --hash=sha256:4dd92f2252d12756b13f9dd15cde322bfb0d625b6fb5d680da1567ec74b462c0 \
     --hash=sha256:9ece7d37fbceb819b80560e7ed58f936e48a65d37ec5f56db79145156b426a25
     # via octomachinery
-idna==3.8 \
-    --hash=sha256:050b4e5baadcd44d760cedbd2b8e639f2ff89bbc7a5730fcc662954303377aac \
-    --hash=sha256:d838c2c0ed6fced7693d5e8ab8e734d5f8fda53a039c0164afb0b82e771e3603
+idna==3.15 \
+    --hash=sha256:048adeaf8c2d788c40fee287673ccaa74c24ffd8dcf09ffa555a2fbb59f10ac8 \
+    --hash=sha256:ca962446ea538f7092a95e057da437618e886f4d349216d2b1e294abfdb65fdc
     # via
     #   anyio
     #   yarl
