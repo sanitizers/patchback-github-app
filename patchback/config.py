@@ -11,6 +11,7 @@ from octomachinery.app.runtime.installation_utils import (
 DEFAULT_BACKPORT_BRANCH_PREFIX = 'patchback/backports/'
 DEFAULT_BACKPORT_LABEL_PREFIX = 'backport-'
 DEFAULT_TARGET_BRANCH_PREFIX = ''
+DEFAULT_BACKPORTED_LABEL_PREFIX = ''
 
 
 @attr.dataclass
@@ -29,6 +30,24 @@ class PatchbackConfig:
         default=DEFAULT_TARGET_BRANCH_PREFIX,
     )
     """Prefix that the older/stable version branch has."""
+
+    backported_label_prefix: str = attr.ib(  # e.g 'backported-'
+        default=DEFAULT_BACKPORTED_LABEL_PREFIX,
+    )
+    """Prefix of the label marking a backport that landed.
+
+    Empty -- the default -- leaves the original pull request unlabeled on
+    success. Set it to label the pull request with
+    ``{backported_label_prefix}{branch_id}`` once the backport PR exists,
+    which makes the backports that still need a human easy to filter out.
+    """
+
+    delete_backport_label_on_success: bool = attr.ib(default=False)
+    """Whether to drop the triggering label once the backport PR exists.
+
+    Off by default: dropping the label loses the record of what was asked
+    for unless :attr:`backported_label_prefix` is set to keep it.
+    """
 
 
 async def get_patchback_config(
