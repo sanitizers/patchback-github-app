@@ -245,7 +245,7 @@ async def on_merge_of_labeled_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to labeled pull request merge."""
-    repo_config = await get_patchback_config()
+    repo_config, config_warnings = await get_patchback_config()
     backport_label_len = len(repo_config.backport_label_prefix)
     # Sort version numbers highest to lowest
     labels = sorted((label['name'] for label in pull_request['labels']), reverse=True)
@@ -287,6 +287,7 @@ async def on_merge_of_labeled_pr(
             repository['pulls_url'],
             repository['full_name'],
             repository['clone_url'],
+            config_warnings=config_warnings,
         )
 
 
@@ -302,7 +303,7 @@ async def on_label_added_to_merged_pr(
         **_kwargs,  # unimportant event details
 ) -> None:
     """React to GitHub App pull request / issue label webhook event."""
-    repo_config = await get_patchback_config()
+    repo_config, config_warnings = await get_patchback_config()
     label_name = label['name']
     if not label_name.startswith(repo_config.backport_label_prefix):
         logger.info(
@@ -337,6 +338,7 @@ async def on_label_added_to_merged_pr(
         repository['pulls_url'],
         repository['full_name'],
         repository['clone_url'],
+        config_warnings=config_warnings,
     )
 
 
@@ -353,6 +355,8 @@ async def process_pr_backport_labels(
         backport_branch_prefix,
         pr_api_url, repo_slug,
         git_url,
+        *,
+        config_warnings: tuple = (),
 ) -> None:
     gh_api = RUNTIME_CONTEXT.app_installation_client
     checks_api = ChecksAPI(
@@ -370,6 +374,7 @@ async def process_pr_backport_labels(
         comments_api=comments_api,
         locking_api=locking_api,
         branch_name=target_branch,
+        config_warnings=config_warnings,
     )
 
     await pr_reporter.start_reporting(pr_head_sha, pr_number, pr_merge_commit)
