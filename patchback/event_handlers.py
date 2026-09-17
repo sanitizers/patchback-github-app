@@ -272,22 +272,41 @@ async def on_merge_of_labeled_pr(
     )
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
 
+    # NOTE: Each target branch is independent. An unexpected failure while
+    # NOTE: backporting to one of them must not cancel the ones that come
+    # NOTE: after it -- otherwise a single transient API error silently
+    # NOTE: drops every remaining backport with no report at all.
+    first_error = None
     for target_branch in target_branches:
-        await process_pr_backport_labels(
-            number,
-            pull_request['title'],
-            pull_request['body'],
-            pull_request['locked'],
-            pull_request['active_lock_reason'],
-            pull_request['base']['ref'],
-            pull_request['head']['sha'],
-            merge_commit_sha,
-            target_branch,
-            repo_config.backport_branch_prefix,
-            repository['pulls_url'],
-            repository['full_name'],
-            repository['clone_url'],
-        )
+        try:
+            await process_pr_backport_labels(
+                number,
+                pull_request['title'],
+                pull_request['body'],
+                pull_request['locked'],
+                pull_request['active_lock_reason'],
+                pull_request['base']['ref'],
+                pull_request['head']['sha'],
+                merge_commit_sha,
+                target_branch,
+                repo_config.backport_branch_prefix,
+                repository['pulls_url'],
+                repository['full_name'],
+                repository['clone_url'],
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.exception(
+                'Backporting PR #%s to `%s` failed unexpectedly, '
+                'continuing with the remaining target branches...',
+                number, target_branch,
+            )
+            if first_error is None:
+                first_error = exc
+
+    # NOTE: Re-raised so that the error still surfaces in the logs and in
+    # NOTE: error tracking, now that every branch has had its turn.
+    if first_error is not None:
+        raise first_error
 
 
 @process_event_actions('pull_request', {'labeled'})
