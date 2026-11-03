@@ -18,6 +18,11 @@ from .comments_api import CommentsAPI
 from .locking_api import LockingAPI
 from .config import get_patchback_config
 from .github_reporter import PullRequestReporter
+from .pick_target import (
+    AmbiguousMergeShapeError,
+    count_upstreamed_commits,
+    resolve_pick_target,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -108,8 +113,95 @@ def ensure_pr_merged(event_handler):
     return event_handler_wrapper
 
 
+PR_HEAD_REF = 'refs/patchback/pr-head'
+
+
+def _resolve_non_merge_pick_target(
+        git_cmd: 'tuple[str, ...]', pr_number: int, pr_commits_count: int,
+        merge_commit_sha: str,
+) -> str:
+    """Return what to cherry-pick for a PR whose merge left no merge commit.
+
+    GitHub reports the same ``merge_commit_sha`` field whether the pull
+    request was squash-“merged” (one new commit holding everything) or
+    rebase-“merged”/fast-forwarded (its commits replayed onto the base
+    branch, ``merge_commit_sha`` being merely the last of them). Telling
+    those apart needs the pull request's own commits, which live in the
+    ``refs/pull/*/head`` ref GitHub keeps for every pull request.
+    """
+    try:
+        check_call(
+            (
+                *git_cmd, 'fetch', 'origin',
+                f'+refs/pull/{pr_number:d}/head:{PR_HEAD_REF}',
+            ),
+            env={},
+        )
+    except CalledProcessError as proc_err:
+        # NOTE: Without the pull request's own commits there is nothing to
+        # NOTE: compare the merge commit against. Keep the historical
+        # NOTE: single-commit behavior, which is right for squash-“merges”
+        # NOTE: — the default strategy and by far the common case.
+        logger.error(
+            'Failed to fetch the head of PR#%d, assuming `%s` carries the '
+            'whole pull request: %s',
+            pr_number, merge_commit_sha, proc_err,
+        )
+        return merge_commit_sha
+
+    pr_head_sha = check_output(
+        (*git_cmd, 'rev-parse', '--verify', f'{PR_HEAD_REF}^{{commit}}'),
+        env={}, text=True,
+    ).strip()
+
+    if pr_head_sha == merge_commit_sha:
+        # NOTE: A fast-forward push leaves the pull request's commits on
+        # NOTE: the base branch verbatim, so `git cherry` has no rewritten
+        # NOTE: copies to match and would report an empty range. The
+        # NOTE: commit count GitHub sends is the only thing saying how far
+        # NOTE: back the series goes.
+        upstreamed = total = pr_commits_count
+        logger.info(
+            'PR#%d was fast-forwarded, its %d commit(s) end at `%s`',
+            pr_number, total, merge_commit_sha,
+        )
+    else:
+        upstreamed, total = count_upstreamed_commits(
+            check_output(
+                (*git_cmd, 'cherry', merge_commit_sha, PR_HEAD_REF),
+                env={}, text=True,
+            ),
+        )
+        logger.info(
+            'PR#%d has %d commit(s), %d of which already landed in `%s`',
+            pr_number, total, upstreamed, merge_commit_sha,
+        )
+
+    pick_target = resolve_pick_target(merge_commit_sha, upstreamed, total)
+    if pick_target == merge_commit_sha:
+        return pick_target
+
+    picked_count = int(
+        check_output(
+            (*git_cmd, 'rev-list', '--count', pick_target, '--'),
+            env={}, text=True,
+        ),
+    )
+    if picked_count != total:
+        raise AmbiguousMergeShapeError(
+            f'The {total:d} commits of this pull request were expected to '
+            f'end at `{merge_commit_sha}`, but `{pick_target}` spans '
+            f'{picked_count:d} commits instead. The branch history is not '
+            'the flat series a rebase-“merge” produces — most likely it '
+            'contains merge commits — so no backport was attempted. Please '
+            'cherry-pick the commits manually.',
+        )
+    return pick_target
+
+
 def backport_pr_sync(
-        pr_number: int, merge_commit_sha: str, target_branch: str,
+        pr_number: int, pr_commits_count: int,
+        merge_commit_sha: str, target_branch: str,
         backport_pr_branch: str,
         repo_slug: str, repo_remote: str, installation_access_token: str,
 ) -> None:
@@ -117,7 +209,9 @@ def backport_pr_sync(
 
     It clones the ``repo_remote`` using a GitHub App Installation token
     ``installation_access_token`` to authenticate. Then, it cherry-picks
-    ``merge_commit_sha`` onto a new branch based on the
+    the commits the pull request contributed — which is not always just
+    ``merge_commit_sha``, see :func:`~patchback.pick_target
+    .resolve_pick_target` — onto a new branch based on the
     ``target_branch`` and pushes it back to ``repo_remote``.
     """
     def sanitize_token_in_str(inp):
@@ -186,18 +280,33 @@ def backport_pr_sync(
             merge_commit_sha, ('' if is_merge_commit else ' not'),
         )
 
+        pick_target = (
+            merge_commit_sha if is_merge_commit
+            else _resolve_non_merge_pick_target(
+                git_cmd, pr_number, pr_commits_count, merge_commit_sha,
+            )
+        )
+
         try:
             spawn_proc(
                 *git_cmd, 'cherry-pick', '-x',
                 '--strategy-option=diff-algorithm=histogram',
                 '--strategy-option=find-renames',
                 *(('--mainline', '1') if is_merge_commit else ()),
-                merge_commit_sha,
+                pick_target,
             )
         except CalledProcessError as proc_err:
+            # NOTE: The manual guide shown next to this message cherry-picks
+            # NOTE: the merge commit, which is only half the story when the
+            # NOTE: pull request landed as a series. Say so explicitly.
+            series_note = '' if pick_target == merge_commit_sha else (
+                f' This pull request was merged as a series of commits, so '
+                f'the manual instructions below need to cherry-pick the '
+                f'`{pick_target}` range instead of {merge_commit_sha} alone.'
+            )
             raise ValueError(
-                f'Failed to cleanly apply {merge_commit_sha} '
-                f'on top of {backport_pr_branch}',
+                f'Failed to cleanly apply {pick_target} '
+                f'on top of {backport_pr_branch}.{series_note}',
             ) from proc_err
         else:
             logger.info('Backported the commit into `%s`', backport_pr_branch)
@@ -275,6 +384,7 @@ async def on_merge_of_labeled_pr(
     for target_branch in target_branches:
         await process_pr_backport_labels(
             number,
+            pull_request['commits'],
             pull_request['title'],
             pull_request['body'],
             pull_request['locked'],
@@ -325,6 +435,7 @@ async def on_label_added_to_merged_pr(
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
     await process_pr_backport_labels(
         number,
+        pull_request['commits'],
         pull_request['title'],
         pull_request['body'],
         pull_request['locked'],
@@ -342,6 +453,7 @@ async def on_label_added_to_merged_pr(
 
 async def process_pr_backport_labels(
         pr_number,
+        pr_commits_count,
         pr_title,
         pr_body,
         pr_is_locked,
@@ -383,6 +495,7 @@ async def process_pr_backport_labels(
         await run_in_thread(
             backport_pr_sync,
             pr_number,
+            pr_commits_count,
             pr_merge_commit,
             target_branch,
             backport_pr_branch,
@@ -400,6 +513,21 @@ async def process_pr_backport_labels(
         await pr_reporter.finish_reporting(
             subtitle='💔 cherry-picking failed — target branch does not exist',
             summary=f'❌ {lu_err!s}',
+        )
+        return
+    except AmbiguousMergeShapeError as shape_err:
+        logger.info(
+            'Refused to backport PR #%d (commit `%s`) to `%s` because it is '
+            'unclear which commits it contributed to `%s`',
+            pr_number, pr_merge_commit, target_branch, pr_base_ref,
+        )
+
+        await pr_reporter.finish_reporting(
+            # NOTE: The manual guide is deliberately omitted: its
+            # NOTE: `git cherry-pick <merge commit>` step is the very
+            # NOTE: operation that would drop the rest of the series.
+            subtitle='💔 cherry-picking skipped — unclear commit range',
+            summary=f'❌ {shape_err!s}',
         )
         return
     except ValueError as val_err:
