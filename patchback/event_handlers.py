@@ -16,7 +16,9 @@ from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 from .checks_api import ChecksAPI
 from .comments_api import CommentsAPI
 from .locking_api import LockingAPI
-from .config import get_patchback_config
+from .config import PatchbackConfig, get_patchback_config
+from .labels import is_backport_label, to_backported_label
+from .labels_api import LabelsAPI
 from .github_reporter import PullRequestReporter
 
 
@@ -249,13 +251,21 @@ async def on_merge_of_labeled_pr(
     backport_label_len = len(repo_config.backport_label_prefix)
     # Sort version numbers highest to lowest
     labels = sorted((label['name'] for label in pull_request['labels']), reverse=True)
-    target_branches = [
-        f'{repo_config.target_branch_prefix}{label[backport_label_len:]}'
+    backport_targets = [
+        (
+            label,
+            f'{repo_config.target_branch_prefix}'
+            f'{label[backport_label_len:]}',
+        )
         for label in labels
-        if label.startswith(repo_config.backport_label_prefix)
+        if is_backport_label(
+            label,
+            backport_prefix=repo_config.backport_label_prefix,
+            backported_prefix=repo_config.backported_label_prefix,
+        )
     ]
 
-    if not target_branches:
+    if not backport_targets:
         logger.info(
             'PR#%s does not have backport labels '
             'starting with "%s", ignoring...',
@@ -268,11 +278,12 @@ async def on_merge_of_labeled_pr(
 
     logger.info(
         'PR#%s is labeled with "%s". It needs to be backported to %s',
-        number, labels, ', '.join(target_branches),
+        number, labels,
+        ', '.join(branch for _label, branch in backport_targets),
     )
     logger.info('PR#%s merge commit: %s', number, merge_commit_sha)
 
-    for target_branch in target_branches:
+    for backport_label, target_branch in backport_targets:
         await process_pr_backport_labels(
             number,
             pull_request['title'],
@@ -287,6 +298,8 @@ async def on_merge_of_labeled_pr(
             repository['pulls_url'],
             repository['full_name'],
             repository['clone_url'],
+            backport_label=backport_label,
+            repo_config=repo_config,
         )
 
 
@@ -304,10 +317,14 @@ async def on_label_added_to_merged_pr(
     """React to GitHub App pull request / issue label webhook event."""
     repo_config = await get_patchback_config()
     label_name = label['name']
-    if not label_name.startswith(repo_config.backport_label_prefix):
+    if not is_backport_label(
+            label_name,
+            backport_prefix=repo_config.backport_label_prefix,
+            backported_prefix=repo_config.backported_label_prefix,
+    ):
         logger.info(
-            'PR#%s got labeled with %s but it is not '
-            'a backport label (it is not prefixed with "%s"), ignoring...',
+            'PR#%s got labeled with %s but it does not request a '
+            'backport (prefix "%s"), ignoring...',
             number, label_name, repo_config.backport_label_prefix,
         )
         return
@@ -337,6 +354,8 @@ async def on_label_added_to_merged_pr(
         repository['pulls_url'],
         repository['full_name'],
         repository['clone_url'],
+        backport_label=label_name,
+        repo_config=repo_config,
     )
 
 
@@ -353,6 +372,9 @@ async def process_pr_backport_labels(
         backport_branch_prefix,
         pr_api_url, repo_slug,
         git_url,
+        *,
+        backport_label: str,
+        repo_config: PatchbackConfig,
 ) -> None:
     gh_api = RUNTIME_CONTEXT.app_installation_client
     checks_api = ChecksAPI(
@@ -497,9 +519,59 @@ async def process_pr_backport_labels(
     else:
         logger.info('Created a PR @ %s', pr_resp['html_url'])
 
+    await update_backport_labels(
+        LabelsAPI(api=gh_api, repo_slug=repo_slug, pr_number=pr_number),
+        backport_label=backport_label,
+        repo_config=repo_config,
+    )
+
     await pr_reporter.finish_reporting(
         conclusion='success',
         subtitle='💚 backport PR created',
         text=f'Backported as {pr_resp["html_url"]}',
         summary=f'✅ {backport_pr_branch_msg!s}',
     )
+
+
+async def update_backport_labels(
+        labels_api: LabelsAPI,
+        *,
+        backport_label: str,
+        repo_config: PatchbackConfig,
+) -> None:
+    """Record a landed backport on the original pull request.
+
+    Both steps are opt-in and best-effort: the backport PR already exists
+    by the time this runs, so a label that cannot be written must not turn
+    a successful backport into a reported failure.
+    """
+    if repo_config.backported_label_prefix:
+        backported_label = to_backported_label(
+            backport_label,
+            backport_prefix=repo_config.backport_label_prefix,
+            backported_prefix=repo_config.backported_label_prefix,
+        )
+        try:
+            await labels_api.add_label(backported_label)
+        except (BadRequest, ValidationError) as label_err:
+            logger.warning(
+                'Failed to label the PR with `%s`: %s',
+                backported_label, label_err,
+            )
+        else:
+            logger.info('Labeled the PR with `%s`', backported_label)
+
+    if not repo_config.delete_backport_label_on_success:
+        return
+
+    try:
+        await labels_api.remove_label(backport_label)
+    except (BadRequest, ValidationError) as label_err:
+        # NOTE: A concurrent backport of another branch, or a human, may
+        # NOTE: have removed it already -- that is a 404, not a problem.
+        logger.warning(
+            'Failed to remove the `%s` label from the PR: %s',
+            backport_label, label_err,
+        )
+    else:
+        logger.info('Removed the `%s` label from the PR', backport_label)
