@@ -18,6 +18,9 @@ from .comments_api import CommentsAPI
 from .locking_api import LockingAPI
 from .config import get_patchback_config
 from .github_reporter import PullRequestReporter
+from .pr_title import (
+    DEFAULT_BACKPORT_PR_TITLE_TEMPLATE, render_backport_pr_title,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -287,6 +290,7 @@ async def on_merge_of_labeled_pr(
             repository['pulls_url'],
             repository['full_name'],
             repository['clone_url'],
+            pr_title_template=repo_config.backport_pr_title_template,
         )
 
 
@@ -337,6 +341,7 @@ async def on_label_added_to_merged_pr(
         repository['pulls_url'],
         repository['full_name'],
         repository['clone_url'],
+        pr_title_template=repo_config.backport_pr_title_template,
     )
 
 
@@ -353,6 +358,8 @@ async def process_pr_backport_labels(
         backport_branch_prefix,
         pr_api_url, repo_slug,
         git_url,
+        *,
+        pr_title_template: str = DEFAULT_BACKPORT_PR_TITLE_TEMPLATE,
 ) -> None:
     gh_api = RUNTIME_CONTEXT.app_installation_client
     checks_api = ChecksAPI(
@@ -439,6 +446,31 @@ async def process_pr_backport_labels(
         summary=backport_pr_branch_msg,
     )
 
+    title_substitutions = {
+        'pr_number': pr_number,
+        'pr_title': pr_title,
+        'target_branch': target_branch,
+        'base_branch': pr_base_ref,
+        'merge_commit_sha': pr_merge_commit,
+    }
+    title_warning = ''
+    try:
+        backport_pr_title = render_backport_pr_title(
+            pr_title_template, **title_substitutions,
+        )
+    except ValueError as title_err:
+        # A misconfigured title must not cost the repo its backport: the
+        # cherry-pick already landed on the remote at this point.
+        logger.warning(
+            'Falling back to the default backport PR title template '
+            'for PR #%d: %s',
+            pr_number, title_err,
+        )
+        title_warning = f'\n\n⚠️ {title_err!s}'
+        backport_pr_title = render_backport_pr_title(
+            DEFAULT_BACKPORT_PR_TITLE_TEMPLATE, **title_substitutions,
+        )
+
     logger.info('Creating a backport PR...')
     backport_pr_body = (
         f'**This is a backport of PR #{pr_number} as '
@@ -454,8 +486,7 @@ async def process_pr_backport_labels(
         pr_resp = await gh_api.post(
             pr_api_url,
             data={
-                'title': f'[PR #{pr_number}/{pr_merge_commit[:8]} backport]'
-                f'[{target_branch}] {pr_title}',
+                'title': backport_pr_title,
                 'head': backport_pr_branch,
                 'base': target_branch,
                 'body': backport_pr_body,
@@ -501,5 +532,5 @@ async def process_pr_backport_labels(
         conclusion='success',
         subtitle='💚 backport PR created',
         text=f'Backported as {pr_resp["html_url"]}',
-        summary=f'✅ {backport_pr_branch_msg!s}',
+        summary=f'✅ {backport_pr_branch_msg!s}{title_warning!s}',
     )
