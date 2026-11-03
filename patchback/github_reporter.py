@@ -97,10 +97,15 @@ class PullRequestReporter:
             subtitle=None, text=None, summary=None,
             conclusion='neutral',
     ):
-        checks_output = await self._make_comment_from_details(
-            subtitle, text, summary,
-        )
-        await self._locking_api.lock_pr()
+        try:
+            checks_output = await self._make_comment_from_details(
+                subtitle, text, summary,
+            )
+        finally:
+            # NOTE: `start_reporting()` unlocked the PR. Restoring that lock
+            # NOTE: is the one side effect that must survive a failing
+            # NOTE: comment update, or a deliberately locked PR stays open.
+            await self._locking_api.lock_pr()
 
         if not self._use_checks_api:
             return
