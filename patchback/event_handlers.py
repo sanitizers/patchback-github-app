@@ -18,6 +18,11 @@ from .comments_api import CommentsAPI
 from .locking_api import LockingAPI
 from .config import get_patchback_config
 from .github_reporter import PullRequestReporter
+from .merge_commit import (
+    UnsupportedMergeCommitError,
+    cherry_pick_mainline_args,
+    count_commit_parents,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -175,23 +180,25 @@ def backport_pr_sync(
             'Cherry-picking `%s` into `%s`...',
             merge_commit_sha, backport_pr_branch,
         )
-        merge_check_cmd = (
+        parents_cmd = (
             *git_cmd, 'rev-list',
-            '--no-walk', '--count', '--merges',
+            '--no-walk', '--parents', '-n', '1',
             merge_commit_sha, '--',
         )
-        is_merge_commit = int(check_output(merge_check_cmd, env={})) > 0
-        logger.info(
-            '`%s` is%s a merge commit',
-            merge_commit_sha, ('' if is_merge_commit else ' not'),
+        parent_count = count_commit_parents(
+            check_output(parents_cmd, env={}, text=True),
         )
+        logger.info(
+            '`%s` has %d parent(s)', merge_commit_sha, parent_count,
+        )
+        mainline_args = cherry_pick_mainline_args(parent_count)
 
         try:
             spawn_proc(
                 *git_cmd, 'cherry-pick', '-x',
                 '--strategy-option=diff-algorithm=histogram',
                 '--strategy-option=find-renames',
-                *(('--mainline', '1') if is_merge_commit else ()),
+                *mainline_args,
                 merge_commit_sha,
             )
         except CalledProcessError as proc_err:
@@ -400,6 +407,21 @@ async def process_pr_backport_labels(
         await pr_reporter.finish_reporting(
             subtitle='💔 cherry-picking failed — target branch does not exist',
             summary=f'❌ {lu_err!s}',
+        )
+        return
+    except UnsupportedMergeCommitError as merge_err:
+        logger.info(
+            'Refused to backport PR #%d (commit `%s`) to `%s` because '
+            'its merge commit combines several branches at once',
+            pr_number, pr_merge_commit, target_branch,
+        )
+
+        await pr_reporter.finish_reporting(
+            # NOTE: The manual guide is deliberately omitted here: its
+            # NOTE: `git cherry-pick -m1` step is the very thing that
+            # NOTE: would pull in the unrelated branches.
+            subtitle='💔 cherry-picking skipped — octopus merge commit',
+            summary=f'❌ {merge_err!s}',
         )
         return
     except ValueError as val_err:
