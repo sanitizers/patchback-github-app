@@ -45,12 +45,16 @@ PROGRESS_COMMENT = f"""
 
 
 class PullRequestReporter:
-    def __init__(self, *, checks_api, comments_api, locking_api, branch_name):
+    def __init__(
+            self, *, checks_api, comments_api, locking_api, branch_name,
+            config_warnings=(),
+    ):
         self._branch_name = branch_name
         self._checks_api = checks_api
         self._comments_api = comments_api
         self._locking_api = locking_api
         self._use_checks_api = False
+        self._config_warnings = tuple(config_warnings)
 
     async def start_reporting(self, pr_head_sha, pr_number, pr_merge_commit):
         await self._locking_api.unlock_pr()
@@ -111,6 +115,21 @@ class PullRequestReporter:
             output=checks_output,
         )
 
+    def _append_config_warnings(self, summary):
+        """Attach repo config complaints to every reported summary.
+
+        Bad config is dropped at load time so that backporting keeps
+        working; this is the only place the maintainers get told about it,
+        and it must show up whichever way the run ends.
+        """
+        if not self._config_warnings:
+            return summary
+
+        warnings_md = '\n'.join(
+            f'⚠️ {warning!s}' for warning in self._config_warnings
+        )
+        return f'{summary}\n\n{warnings_md}' if summary else warnings_md
+
     async def _make_comment_from_details(self, subtitle, text, summary):
         title = self._checks_api.check_run_name
         if subtitle:
@@ -119,7 +138,7 @@ class PullRequestReporter:
         checks_output = {
             'title': title,
             'text': text or '',
-            'summary': summary or '',
+            'summary': self._append_config_warnings(summary or ''),
         }
 
         await self._comments_api.update_comment(
