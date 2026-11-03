@@ -2,9 +2,6 @@
 
 import http
 import logging
-import pathlib
-import tempfile
-from subprocess import CalledProcessError, check_output, check_call
 
 from anyio import run_in_thread
 from gidgethub import BadRequest, ValidationError
@@ -13,6 +10,7 @@ from octomachinery.app.routing import process_event_actions
 from octomachinery.app.routing.decorators import process_webhook_payload
 from octomachinery.app.runtime.context import RUNTIME_CONTEXT
 
+from .backport import backport_pr_sync
 from .checks_api import ChecksAPI
 from .comments_api import CommentsAPI
 from .locking_api import LockingAPI
@@ -21,31 +19,6 @@ from .github_reporter import PullRequestReporter
 
 
 logger = logging.getLogger(__name__)
-
-spawn_proc = lambda *cmd: check_call(cmd, env={})
-
-
-# Refs:
-# * https://github.community/t/github-actions-bot-email-address/17204/6
-# * https://github.com/actions/checkout/issues/13#issuecomment-724415212
-# * https://api.github.com/users/patchback%5Bbot%5D
-# TODO: Figure out how to generate this automatically, on startup.
-BOT_USER_GH_ID = 45432694
-GIT_USERNAME = 'patchback[bot]'
-GIT_EMAIL = f'{BOT_USER_GH_ID:d}+{GIT_USERNAME!s}@users.noreply.github.com'
-
-
-CMD_RUN_OUT_TMPL = """
-$ {cmd!s}
-
-[RETURN CODE]: {cmd_rc:d}
-
-[OUTPUT]:
-{cmd_out!s}
-
-[STDERR]:
-{cmd_err!s}
-"""
 
 
 MANUAL_BACKPORT_GUIDE_MD_TMPL = """
@@ -106,132 +79,6 @@ def ensure_pr_merged(event_handler):
             **kwargs,
         )
     return event_handler_wrapper
-
-
-def backport_pr_sync(
-        pr_number: int, merge_commit_sha: str, target_branch: str,
-        backport_pr_branch: str,
-        repo_slug: str, repo_remote: str, installation_access_token: str,
-) -> None:
-    """Returns a branch with backported PR pushed to GitHub.
-
-    It clones the ``repo_remote`` using a GitHub App Installation token
-    ``installation_access_token`` to authenticate. Then, it cherry-picks
-    ``merge_commit_sha`` onto a new branch based on the
-    ``target_branch`` and pushes it back to ``repo_remote``.
-    """
-    def sanitize_token_in_str(inp):
-        nonlocal installation_access_token
-        token_mask = '*' * len(installation_access_token)
-        return inp.replace(
-            installation_access_token, token_mask,
-        )
-
-    repo_remote_w_creds = repo_remote.replace(
-        # NOTE: this is a hack for auth to work
-        'https://github.com/',
-        f'https://x-access-token:{installation_access_token}@github.com/',
-        1,  # count
-    )
-    with tempfile.TemporaryDirectory(
-            prefix=f'{repo_slug.replace("/", "--")}---'
-            f'{target_branch.replace("/", "--")}---',
-            suffix=f'---PR-{pr_number}.git',
-    ) as tmp_dir:
-        logger.info('Created a temporary dir: `%s`', tmp_dir)
-        check_call(('git', 'init', tmp_dir), env={})
-        git_cmd = (
-            'git',
-            '--git-dir', str(pathlib.Path(tmp_dir) / '.git'),
-            '--work-tree', tmp_dir,
-            '-c', f'user.email={GIT_EMAIL}',
-            '-c', f'user.name={GIT_USERNAME}',
-            '-c', 'diff.algorithm=histogram',
-            # '-c', 'protocol.version=2',  # Needs Git 2.18+
-        )
-        spawn_proc(*git_cmd, 'remote', 'add', 'origin', repo_remote_w_creds)
-        try:
-            spawn_proc(*git_cmd, 'fetch', '--prune', 'origin')
-        except CalledProcessError as proc_err:
-            raise LookupError(f'Failed to fetch {repo_remote}') from proc_err
-        else:
-            logger.info('Fetched `%s`', repo_remote)
-
-        try:
-            check_call(
-                (
-                    *git_cmd, 'checkout',
-                    '-b', backport_pr_branch, f'origin/{target_branch}',
-                ),
-            )
-        except CalledProcessError as proc_err:
-            raise LookupError(
-                f'Failed to find branch {target_branch}',
-            ) from proc_err
-        else:
-            logger.info('Checked out `%s`', backport_pr_branch)
-
-        logger.info(
-            'Cherry-picking `%s` into `%s`...',
-            merge_commit_sha, backport_pr_branch,
-        )
-        merge_check_cmd = (
-            *git_cmd, 'rev-list',
-            '--no-walk', '--count', '--merges',
-            merge_commit_sha, '--',
-        )
-        is_merge_commit = int(check_output(merge_check_cmd, env={})) > 0
-        logger.info(
-            '`%s` is%s a merge commit',
-            merge_commit_sha, ('' if is_merge_commit else ' not'),
-        )
-
-        try:
-            spawn_proc(
-                *git_cmd, 'cherry-pick', '-x',
-                '--strategy-option=diff-algorithm=histogram',
-                '--strategy-option=find-renames',
-                *(('--mainline', '1') if is_merge_commit else ()),
-                merge_commit_sha,
-            )
-        except CalledProcessError as proc_err:
-            raise ValueError(
-                f'Failed to cleanly apply {merge_commit_sha} '
-                f'on top of {backport_pr_branch}',
-            ) from proc_err
-        else:
-            logger.info('Backported the commit into `%s`', backport_pr_branch)
-
-        logger.info('Pushing `%s` back to GitHub...', backport_pr_branch)
-        try:
-            spawn_proc(
-                *git_cmd, 'push',
-                # We manage the branch and thus don't care about rewrites:
-                '--force-with-lease',
-                'origin', 'HEAD',
-            )
-        except CalledProcessError as proc_err:
-            logger.error(sanitize_token_in_str(str(proc_err)))
-
-            cmd_log = CMD_RUN_OUT_TMPL.format(
-                cmd=sanitize_token_in_str(' '.join(proc_err.cmd)),
-                cmd_out=sanitize_token_in_str(proc_err.stdout or ''),
-                cmd_err=sanitize_token_in_str(proc_err.stderr or ''),
-                cmd_rc=proc_err.returncode,
-            )
-
-            raise PermissionError(
-                'Current GitHub App installation does not grant sufficient '
-                f'privileges for pushing to {repo_remote}. Lacking '
-                '`Contents: write` or `Workflows: write` permissions '
-                'are known to cause this.\n\n'
-                'the underlying command output was:\n\n'
-                '```console\n'
-                f'{cmd_log}\n'
-                '```',
-            ) from proc_err
-        else:
-            logger.info('Push to GitHub succeeded...')
 
 
 @process_event_actions('pull_request', {'closed'})
