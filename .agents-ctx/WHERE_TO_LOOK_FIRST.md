@@ -14,20 +14,20 @@ Read, in this order:
 
 Here:
 
-1. `pyproject.toml` (build backend and metadata).
-2. `src/pylibsshext/<module>.pyx` and its `.pxd`; libssh
-   declarations live under `src/pylibsshext/includes/`.
-3. `tests/conftest.py` (e.g. the `sshd_addr` fixture), then
-   `tests/unit/<module>_test.py` or `tests/integration/`.
-4. As above.
-5. `.github/workflows/ci-cd.yml`, with the `reusable-*.yml`
-   workflows it calls.
+1. `requirements.in` -- the direct dependencies, pinned into
+   `requirements.txt` with pip-tools (`.pip-tools.toml`). There's
+   no packaging metadata.
+2. `patchback/event_handlers.py` -- the webhook handlers doing the
+   backports -- and the API helpers next to it, e.g.
+   `checks_api.py`, `comments_api.py`, `locking_api.py`.
+3. There's no test suite yet.
+4. `.pre-commit-config.yaml` -- there's no `tox.ini`.
+5. `Procfile`, `runtime.txt` and `app.sh` -- how the service is
+   deployed.
 
 Other places worth knowing:
 
-- `packaging/pep517_backend/` -- the in-tree PEP 517 build backend.
-- `packaging/rpm/` -- RPM packaging, used by `.packit.yml`.
-- `build-scripts/manylinux-container-image/` -- the manylinux
-  images wheels are built in.
-- `docs/` -- Sphinx docs (RST); change notes go under
-  `docs/changelog-fragments/`.
+- `app.yml` -- a GitHub App manifest recording the privileges
+  Patchback needs. It isn't synced with the public App's settings,
+  which have to be changed on its settings page.
+- `README.md` -- how repositories use the app.
